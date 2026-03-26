@@ -73,8 +73,11 @@ GUI 安装器支持：
 - 一键打开 `codex login` / `claude login`
 - 一键检查登录状态（`Check Login Status`）
 - 多账号槽位：`Save Slot / Activate Slot / Delete Slot`
+- 余量查询：刷新后展示当前账号 5h / 7d 剩余额度（进度条 + 百分比）
 - 填写 Server/Token 后一键启动 runner
 - 默认中文界面，可一键切换英文
+
+说明：当前“余量查询”基于 Codex app-server 的 `account/rateLimits/read` 接口实现。
 
 账号槽位说明：
 - 槽位数据保存在 `runner/.accounts/windows/<slot>/`

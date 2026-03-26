@@ -9,12 +9,13 @@ $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
 $authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
 $accountSlotsScript = Join-Path $scriptDir "account-slots-windows.ps1"
+$quotaScript = Join-Path $scriptDir "quota-status-windows.ps1"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "AgentLab Runner Setup (Windows)"
-$form.Size = New-Object System.Drawing.Size(920, 780)
+$form.Size = New-Object System.Drawing.Size(920, 920)
 $form.StartPosition = "CenterScreen"
-$form.MinimumSize = New-Object System.Drawing.Size(920, 780)
+$form.MinimumSize = New-Object System.Drawing.Size(920, 920)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "AgentLab Runner - One-click Setup"
@@ -197,9 +198,79 @@ $btnStartRunner.Location = New-Object System.Drawing.Point(690, 62)
 $btnStartRunner.Size = New-Object System.Drawing.Size(140, 28)
 $groupStart.Controls.Add($btnStartRunner)
 
+$groupQuota = New-Object System.Windows.Forms.GroupBox
+$groupQuota.Text = "4) Quota"
+$groupQuota.Location = New-Object System.Drawing.Point(20, 530)
+$groupQuota.Size = New-Object System.Drawing.Size(860, 130)
+$form.Controls.Add($groupQuota)
+
+$lblQuotaAccount = New-Object System.Windows.Forms.Label
+$lblQuotaAccount.Text = "当前账号: -"
+$lblQuotaAccount.Location = New-Object System.Drawing.Point(18, 28)
+$lblQuotaAccount.Size = New-Object System.Drawing.Size(620, 20)
+$groupQuota.Controls.Add($lblQuotaAccount)
+
+$lblQuotaPlan = New-Object System.Windows.Forms.Label
+$lblQuotaPlan.Text = "套餐: -"
+$lblQuotaPlan.Location = New-Object System.Drawing.Point(18, 48)
+$lblQuotaPlan.Size = New-Object System.Drawing.Size(300, 20)
+$groupQuota.Controls.Add($lblQuotaPlan)
+
+$lblQuotaRefreshed = New-Object System.Windows.Forms.Label
+$lblQuotaRefreshed.Text = "刷新时间: -"
+$lblQuotaRefreshed.Location = New-Object System.Drawing.Point(340, 48)
+$lblQuotaRefreshed.Size = New-Object System.Drawing.Size(300, 20)
+$groupQuota.Controls.Add($lblQuotaRefreshed)
+
+$btnQuotaRefresh = New-Object System.Windows.Forms.Button
+$btnQuotaRefresh.Text = "刷新余量"
+$btnQuotaRefresh.Location = New-Object System.Drawing.Point(700, 24)
+$btnQuotaRefresh.Size = New-Object System.Drawing.Size(130, 26)
+$groupQuota.Controls.Add($btnQuotaRefresh)
+
+$lblQuota5h = New-Object System.Windows.Forms.Label
+$lblQuota5h.Text = "5h 剩余: -"
+$lblQuota5h.Location = New-Object System.Drawing.Point(18, 74)
+$lblQuota5h.Size = New-Object System.Drawing.Size(180, 20)
+$groupQuota.Controls.Add($lblQuota5h)
+
+$pbQuota5h = New-Object System.Windows.Forms.ProgressBar
+$pbQuota5h.Location = New-Object System.Drawing.Point(200, 74)
+$pbQuota5h.Size = New-Object System.Drawing.Size(520, 18)
+$pbQuota5h.Minimum = 0
+$pbQuota5h.Maximum = 100
+$pbQuota5h.Value = 0
+$groupQuota.Controls.Add($pbQuota5h)
+
+$lblQuota5hPercent = New-Object System.Windows.Forms.Label
+$lblQuota5hPercent.Text = "0%"
+$lblQuota5hPercent.Location = New-Object System.Drawing.Point(730, 74)
+$lblQuota5hPercent.Size = New-Object System.Drawing.Size(100, 20)
+$groupQuota.Controls.Add($lblQuota5hPercent)
+
+$lblQuota7d = New-Object System.Windows.Forms.Label
+$lblQuota7d.Text = "7d 剩余: -"
+$lblQuota7d.Location = New-Object System.Drawing.Point(18, 100)
+$lblQuota7d.Size = New-Object System.Drawing.Size(180, 20)
+$groupQuota.Controls.Add($lblQuota7d)
+
+$pbQuota7d = New-Object System.Windows.Forms.ProgressBar
+$pbQuota7d.Location = New-Object System.Drawing.Point(200, 100)
+$pbQuota7d.Size = New-Object System.Drawing.Size(520, 18)
+$pbQuota7d.Minimum = 0
+$pbQuota7d.Maximum = 100
+$pbQuota7d.Value = 0
+$groupQuota.Controls.Add($pbQuota7d)
+
+$lblQuota7dPercent = New-Object System.Windows.Forms.Label
+$lblQuota7dPercent.Text = "0%"
+$lblQuota7dPercent.Location = New-Object System.Drawing.Point(730, 100)
+$lblQuota7dPercent.Size = New-Object System.Drawing.Size(100, 20)
+$groupQuota.Controls.Add($lblQuota7dPercent)
+
 $groupLog = New-Object System.Windows.Forms.GroupBox
 $groupLog.Text = "Logs"
-$groupLog.Location = New-Object System.Drawing.Point(20, 530)
+$groupLog.Location = New-Object System.Drawing.Point(20, 670)
 $groupLog.Size = New-Object System.Drawing.Size(860, 180)
 $form.Controls.Add($groupLog)
 
@@ -215,7 +286,7 @@ $groupLog.Controls.Add($tbLog)
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready"
 $status.AutoSize = $true
-$status.Location = New-Object System.Drawing.Point(22, 722)
+$status.Location = New-Object System.Drawing.Point(22, 862)
 $form.Controls.Add($status)
 
 $script:activeJob = $null
@@ -223,6 +294,7 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350
 $script:lang = "zh"
 $script:activeSlotName = ""
+$script:quotaState = $null
 
 function T([string]$k) {
   if ($script:lang -eq "en") {
@@ -254,6 +326,17 @@ function T([string]$k) {
       "label_server" { return "Server:" }
       "label_token" { return "Token:" }
       "btn_start_runner" { return "Start Runner" }
+      "group_quota" { return "4) Quota" }
+      "btn_quota_refresh" { return "Refresh Quota" }
+      "quota_account" { return "Account:" }
+      "quota_plan" { return "Plan:" }
+      "quota_refreshed" { return "Refreshed:" }
+      "quota_5h" { return "5h Remaining:" }
+      "quota_7d" { return "7d Remaining:" }
+      "quota_unknown" { return "-" }
+      "quota_unavailable" { return "Unavailable" }
+      "quota_loading" { return "Refreshing quota..." }
+      "quota_reset" { return "reset" }
       "group_logs" { return "Logs" }
       "ready" { return "Ready" }
       "msg_busy" { return "A task is already running. Please wait." }
@@ -296,6 +379,17 @@ function T([string]$k) {
     "label_server" { return "服务端：" }
     "label_token" { return "Token：" }
     "btn_start_runner" { return "启动 Runner" }
+    "group_quota" { return "4) 额度余量" }
+    "btn_quota_refresh" { return "刷新余量" }
+    "quota_account" { return "当前账号：" }
+    "quota_plan" { return "套餐：" }
+    "quota_refreshed" { return "刷新时间：" }
+    "quota_5h" { return "5h 剩余：" }
+    "quota_7d" { return "7d 剩余：" }
+    "quota_unknown" { return "-" }
+    "quota_unavailable" { return "不可用" }
+    "quota_loading" { return "正在刷新额度..." }
+    "quota_reset" { return "重置" }
     "group_logs" { return "日志" }
     "ready" { return "就绪" }
     "msg_busy" { return "已有任务在执行，请稍候。" }
@@ -317,6 +411,64 @@ function Update-ActiveSlotLabel() {
   } else {
     $lblActiveSlot.Text = (T "active_slot") + " " + $script:activeSlotName
   }
+}
+
+function Set-QuotaUnavailable([string]$message = "") {
+  $msg = if ([string]::IsNullOrWhiteSpace($message)) { T "quota_unavailable" } else { $message }
+  $lblQuotaAccount.Text = (T "quota_account") + " " + $msg
+  $lblQuotaPlan.Text = (T "quota_plan") + " " + (T "quota_unknown")
+  $lblQuotaRefreshed.Text = (T "quota_refreshed") + " " + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+  $lblQuota5h.Text = (T "quota_5h") + " " + (T "quota_unknown")
+  $lblQuota7d.Text = (T "quota_7d") + " " + (T "quota_unknown")
+  $pbQuota5h.Value = 0
+  $pbQuota7d.Value = 0
+  $lblQuota5hPercent.Text = "0%"
+  $lblQuota7dPercent.Text = "0%"
+}
+
+function Apply-QuotaData($quotaObj) {
+  $script:quotaState = $quotaObj
+  if ($null -eq $quotaObj -or -not $quotaObj.ok) {
+    $msg = ""
+    try { $msg = [string]$quotaObj.error } catch {}
+    Set-QuotaUnavailable $msg
+    return
+  }
+  $identity = ""
+  $planType = ""
+  $refreshedAt = ""
+  try { $identity = [string]$quotaObj.account.identity } catch {}
+  try { $planType = [string]$quotaObj.account.planType } catch {}
+  try { $refreshedAt = [string]$quotaObj.refreshedAt } catch {}
+  if ([string]::IsNullOrWhiteSpace($identity)) { $identity = T "quota_unknown" }
+  if ([string]::IsNullOrWhiteSpace($planType)) { $planType = T "quota_unknown" }
+  if ([string]::IsNullOrWhiteSpace($refreshedAt)) { $refreshedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+
+  $pRemain = 0
+  $sRemain = 0
+  $pReset = ""
+  $sReset = ""
+  try { $pRemain = [int]$quotaObj.primary.remainingPercent } catch { $pRemain = 0 }
+  try { $sRemain = [int]$quotaObj.secondary.remainingPercent } catch { $sRemain = 0 }
+  try { $pReset = [string]$quotaObj.primary.resetsAtLocal } catch {}
+  try { $sReset = [string]$quotaObj.secondary.resetsAtLocal } catch {}
+
+  if ($pRemain -lt 0) { $pRemain = 0 }
+  if ($pRemain -gt 100) { $pRemain = 100 }
+  if ($sRemain -lt 0) { $sRemain = 0 }
+  if ($sRemain -gt 100) { $sRemain = 100 }
+
+  $lblQuotaAccount.Text = (T "quota_account") + " " + $identity
+  $lblQuotaPlan.Text = (T "quota_plan") + " " + $planType
+  $lblQuotaRefreshed.Text = (T "quota_refreshed") + " " + $refreshedAt
+
+  $lblQuota5h.Text = (T "quota_5h") + " " + $pRemain + "%" + $(if ([string]::IsNullOrWhiteSpace($pReset)) { "" } else { "  (" + (T "quota_reset") + " " + $pReset + ")" })
+  $lblQuota7d.Text = (T "quota_7d") + " " + $sRemain + "%" + $(if ([string]::IsNullOrWhiteSpace($sReset)) { "" } else { "  (" + (T "quota_reset") + " " + $sReset + ")" })
+
+  $pbQuota5h.Value = $pRemain
+  $pbQuota7d.Value = $sRemain
+  $lblQuota5hPercent.Text = "$pRemain%"
+  $lblQuota7dPercent.Text = "$sRemain%"
 }
 
 function Apply-Language() {
@@ -345,11 +497,19 @@ function Apply-Language() {
   $lblServer.Text = T "label_server"
   $lblToken.Text = T "label_token"
   $btnStartRunner.Text = T "btn_start_runner"
+  $groupQuota.Text = T "group_quota"
+  $btnQuotaRefresh.Text = T "btn_quota_refresh"
   $groupLog.Text = T "group_logs"
   if ($status.Text -eq "Ready" -or $status.Text -eq "就绪") {
     $status.Text = T "ready"
   }
   Update-ActiveSlotLabel
+  if ($null -ne $script:quotaState) {
+    Apply-QuotaData $script:quotaState
+  }
+  else {
+    Set-QuotaUnavailable (T "quota_unknown")
+  }
   if ($script:lang -eq "zh") {
     $btnLanguage.Text = "EN"
   } else {
@@ -373,6 +533,7 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $btnActivateSlot.Enabled = -not $busy
   $btnDeleteSlot.Enabled = -not $busy
   $btnSaveSlot.Enabled = -not $busy
+  $btnQuotaRefresh.Enabled = -not $busy
   $cbSlots.Enabled = -not $busy
   $tbNewSlot.Enabled = -not $busy
   $cbCodex.Enabled = -not $busy
@@ -459,6 +620,31 @@ function Refresh-SlotList([string]$preferSlot = "") {
   }
 }
 
+function Refresh-QuotaStatus() {
+  try {
+    Set-Busy $true (T "quota_loading")
+    $raw = & $quotaScript -Json 2>&1 | Out-String
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      throw "empty quota response"
+    }
+    $obj = $raw | ConvertFrom-Json -Depth 10
+    Apply-QuotaData $obj
+    if ($obj.ok) {
+      Add-Log("Quota refreshed: 5h=$($obj.primary.remainingPercent)% 7d=$($obj.secondary.remainingPercent)%")
+    }
+    else {
+      Add-Log("Quota refresh failed: $($obj.error)")
+    }
+  }
+  catch {
+    Set-QuotaUnavailable $_.Exception.Message
+    Add-Log("Quota refresh failed: $($_.Exception.Message)")
+  }
+  finally {
+    Set-Busy $false
+  }
+}
+
 $timer.Add_Tick({
   if (-not $script:activeJob) {
     $timer.Stop()
@@ -529,6 +715,10 @@ $btnAuthStatus.Add_Click({
 
 $btnRefreshSlots.Add_Click({
   Refresh-SlotList ""
+})
+
+$btnQuotaRefresh.Add_Click({
+  Refresh-QuotaStatus
 })
 
 $btnSaveSlot.Add_Click({
