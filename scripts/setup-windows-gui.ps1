@@ -8,12 +8,13 @@ $startScript = Join-Path $scriptDir "start-runner.ps1"
 $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
 $authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
+$accountSlotsScript = Join-Path $scriptDir "account-slots-windows.ps1"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "AgentLab Runner Setup (Windows)"
-$form.Size = New-Object System.Drawing.Size(920, 680)
+$form.Size = New-Object System.Drawing.Size(920, 780)
 $form.StartPosition = "CenterScreen"
-$form.MinimumSize = New-Object System.Drawing.Size(920, 680)
+$form.MinimumSize = New-Object System.Drawing.Size(920, 780)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "AgentLab Runner - One-click Setup"
@@ -23,7 +24,7 @@ $title.Location = New-Object System.Drawing.Point(20, 16)
 $form.Controls.Add($title)
 
 $subTitle = New-Object System.Windows.Forms.Label
-$subTitle.Text = "Install local Node/Codex/Claude, login, and start runner. All tools are kept under this runner folder."
+$subTitle.Text = "Install local Node/Codex/Claude, login, switch accounts, and start runner. All tools are kept under this runner folder."
 $subTitle.AutoSize = $true
 $subTitle.Location = New-Object System.Drawing.Point(22, 46)
 $form.Controls.Add($subTitle)
@@ -72,9 +73,9 @@ $btnOpenFolder.Size = New-Object System.Drawing.Size(150, 28)
 $groupInstall.Controls.Add($btnOpenFolder)
 
 $groupLogin = New-Object System.Windows.Forms.GroupBox
-$groupLogin.Text = "2) Login Accounts"
+$groupLogin.Text = "2) Login + Multi-Account Slots"
 $groupLogin.Location = New-Object System.Drawing.Point(20, 220)
-$groupLogin.Size = New-Object System.Drawing.Size(860, 90)
+$groupLogin.Size = New-Object System.Drawing.Size(860, 170)
 $form.Controls.Add($groupLogin)
 
 $btnCodexLogin = New-Object System.Windows.Forms.Button
@@ -101,9 +102,63 @@ $btnAuthStatus.Location = New-Object System.Drawing.Point(428, 35)
 $btnAuthStatus.Size = New-Object System.Drawing.Size(150, 28)
 $groupLogin.Controls.Add($btnAuthStatus)
 
+$lblSlots = New-Object System.Windows.Forms.Label
+$lblSlots.Text = "Account Slots:"
+$lblSlots.Location = New-Object System.Drawing.Point(18, 78)
+$lblSlots.AutoSize = $true
+$groupLogin.Controls.Add($lblSlots)
+
+$cbSlots = New-Object System.Windows.Forms.ComboBox
+$cbSlots.DropDownStyle = "DropDownList"
+$cbSlots.Location = New-Object System.Drawing.Point(108, 74)
+$cbSlots.Size = New-Object System.Drawing.Size(220, 23)
+$groupLogin.Controls.Add($cbSlots)
+
+$btnRefreshSlots = New-Object System.Windows.Forms.Button
+$btnRefreshSlots.Text = "Refresh Slots"
+$btnRefreshSlots.Location = New-Object System.Drawing.Point(338, 72)
+$btnRefreshSlots.Size = New-Object System.Drawing.Size(100, 26)
+$groupLogin.Controls.Add($btnRefreshSlots)
+
+$btnActivateSlot = New-Object System.Windows.Forms.Button
+$btnActivateSlot.Text = "Activate Slot"
+$btnActivateSlot.Location = New-Object System.Drawing.Point(448, 72)
+$btnActivateSlot.Size = New-Object System.Drawing.Size(100, 26)
+$groupLogin.Controls.Add($btnActivateSlot)
+
+$btnDeleteSlot = New-Object System.Windows.Forms.Button
+$btnDeleteSlot.Text = "Delete Slot"
+$btnDeleteSlot.Location = New-Object System.Drawing.Point(558, 72)
+$btnDeleteSlot.Size = New-Object System.Drawing.Size(100, 26)
+$groupLogin.Controls.Add($btnDeleteSlot)
+
+$lblNewSlot = New-Object System.Windows.Forms.Label
+$lblNewSlot.Text = "Save Current As:"
+$lblNewSlot.Location = New-Object System.Drawing.Point(18, 113)
+$lblNewSlot.AutoSize = $true
+$groupLogin.Controls.Add($lblNewSlot)
+
+$tbNewSlot = New-Object System.Windows.Forms.TextBox
+$tbNewSlot.Location = New-Object System.Drawing.Point(108, 109)
+$tbNewSlot.Size = New-Object System.Drawing.Size(220, 23)
+$tbNewSlot.Text = "account-1"
+$groupLogin.Controls.Add($tbNewSlot)
+
+$btnSaveSlot = New-Object System.Windows.Forms.Button
+$btnSaveSlot.Text = "Save Slot"
+$btnSaveSlot.Location = New-Object System.Drawing.Point(338, 107)
+$btnSaveSlot.Size = New-Object System.Drawing.Size(100, 26)
+$groupLogin.Controls.Add($btnSaveSlot)
+
+$lblActiveSlot = New-Object System.Windows.Forms.Label
+$lblActiveSlot.Text = "Active Slot: (none)"
+$lblActiveSlot.Location = New-Object System.Drawing.Point(448, 112)
+$lblActiveSlot.AutoSize = $true
+$groupLogin.Controls.Add($lblActiveSlot)
+
 $groupStart = New-Object System.Windows.Forms.GroupBox
 $groupStart.Text = "3) Start Runner"
-$groupStart.Location = New-Object System.Drawing.Point(20, 320)
+$groupStart.Location = New-Object System.Drawing.Point(20, 400)
 $groupStart.Size = New-Object System.Drawing.Size(860, 120)
 $form.Controls.Add($groupStart)
 
@@ -138,7 +193,7 @@ $groupStart.Controls.Add($btnStartRunner)
 
 $groupLog = New-Object System.Windows.Forms.GroupBox
 $groupLog.Text = "Logs"
-$groupLog.Location = New-Object System.Drawing.Point(20, 450)
+$groupLog.Location = New-Object System.Drawing.Point(20, 530)
 $groupLog.Size = New-Object System.Drawing.Size(860, 180)
 $form.Controls.Add($groupLog)
 
@@ -154,7 +209,7 @@ $groupLog.Controls.Add($tbLog)
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready"
 $status.AutoSize = $true
-$status.Location = New-Object System.Drawing.Point(22, 636)
+$status.Location = New-Object System.Drawing.Point(22, 722)
 $form.Controls.Add($status)
 
 $script:activeJob = $null
@@ -173,6 +228,12 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $btnInstall.Enabled = -not $busy
   $btnVerify.Enabled = -not $busy
   $btnAuthStatus.Enabled = -not $busy
+  $btnRefreshSlots.Enabled = -not $busy
+  $btnActivateSlot.Enabled = -not $busy
+  $btnDeleteSlot.Enabled = -not $busy
+  $btnSaveSlot.Enabled = -not $busy
+  $cbSlots.Enabled = -not $busy
+  $tbNewSlot.Enabled = -not $busy
   $cbCodex.Enabled = -not $busy
   $cbClaude.Enabled = -not $busy
   $cbMirror.Enabled = -not $busy
@@ -200,6 +261,64 @@ function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [stri
   } -ArgumentList $scriptPath, $arguments, $runnerRoot
 
   $timer.Start()
+}
+
+function Invoke-SlotActionJson([string]$action, [string]$slot) {
+  $args = @("-Action", $action, "-Json")
+  if (-not [string]::IsNullOrWhiteSpace($slot)) {
+    $args += @("-Slot", $slot)
+  }
+  $raw = & $accountSlotsScript @args 2>&1 | Out-String
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    throw "Empty response from account slot script."
+  }
+  try {
+    $obj = $raw | ConvertFrom-Json
+  }
+  catch {
+    throw ("Invalid JSON response: " + $raw)
+  }
+  if (-not $obj.ok) {
+    $err = if ($obj.error) { [string]$obj.error } else { "unknown error" }
+    throw $err
+  }
+  return $obj
+}
+
+function Refresh-SlotList([string]$preferSlot = "") {
+  try {
+    $result = Invoke-SlotActionJson "list" ""
+    $cbSlots.Items.Clear()
+    $names = @()
+    foreach ($s in $result.slots) {
+      $name = [string]$s.name
+      $names += $name
+      [void]$cbSlots.Items.Add($name)
+    }
+    $active = [string]$result.activeSlot
+    if ([string]::IsNullOrWhiteSpace($active)) {
+      $lblActiveSlot.Text = "Active Slot: (none)"
+    } else {
+      $lblActiveSlot.Text = "Active Slot: $active"
+    }
+
+    $selected = ""
+    if (-not [string]::IsNullOrWhiteSpace($preferSlot) -and $names -contains $preferSlot) {
+      $selected = $preferSlot
+    } elseif (-not [string]::IsNullOrWhiteSpace($active) -and $names -contains $active) {
+      $selected = $active
+    } elseif ($names.Count -gt 0) {
+      $selected = $names[0]
+    }
+    if (-not [string]::IsNullOrWhiteSpace($selected)) {
+      $cbSlots.SelectedItem = $selected
+    }
+
+    Add-Log("Slot list refreshed. total=$($names.Count), active=$active")
+  }
+  catch {
+    Add-Log("Failed to refresh slots: $($_.Exception.Message)")
+  }
 }
 
 $timer.Add_Tick({
@@ -270,6 +389,75 @@ $btnAuthStatus.Add_Click({
   Start-BackgroundScript "Checking login status..." $authStatusScript @()
 })
 
+$btnRefreshSlots.Add_Click({
+  Refresh-SlotList ""
+})
+
+$btnSaveSlot.Add_Click({
+  $slotName = $tbNewSlot.Text.Trim()
+  if ([string]::IsNullOrWhiteSpace($slotName)) {
+    [System.Windows.Forms.MessageBox]::Show("Please enter a slot name.", "Slot Required")
+    return
+  }
+  try {
+    $res = Invoke-SlotActionJson "save" $slotName
+    Add-Log("Saved slot '$slotName' with $($res.savedCount) credential file(s).")
+    if (-not [string]::IsNullOrWhiteSpace([string]$res.warning)) {
+      Add-Log("Warning: $($res.warning)")
+    }
+    Refresh-SlotList $slotName
+  }
+  catch {
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Save Slot Failed")
+    Add-Log("Save slot failed: $($_.Exception.Message)")
+  }
+})
+
+$btnActivateSlot.Add_Click({
+  if ($cbSlots.SelectedItem -eq $null) {
+    [System.Windows.Forms.MessageBox]::Show("Please select a slot to activate.", "No Slot Selected")
+    return
+  }
+  $slotName = [string]$cbSlots.SelectedItem
+  try {
+    $res = Invoke-SlotActionJson "activate" $slotName
+    Add-Log("Activated slot '$slotName', restored $($res.restoredCount) file(s).")
+    Refresh-SlotList $slotName
+  }
+  catch {
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Activate Slot Failed")
+    Add-Log("Activate slot failed: $($_.Exception.Message)")
+  }
+})
+
+$btnDeleteSlot.Add_Click({
+  if ($cbSlots.SelectedItem -eq $null) {
+    [System.Windows.Forms.MessageBox]::Show("Please select a slot to delete.", "No Slot Selected")
+    return
+  }
+  $slotName = [string]$cbSlots.SelectedItem
+  $confirm = [System.Windows.Forms.MessageBox]::Show(
+    "Delete slot '$slotName' ?",
+    "Confirm Delete",
+    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+    [System.Windows.Forms.MessageBoxIcon]::Warning
+  )
+  if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+  try {
+    $res = Invoke-SlotActionJson "delete" $slotName
+    if ($res.deleted) {
+      Add-Log("Deleted slot '$slotName'.")
+    } else {
+      Add-Log("Slot '$slotName' not found.")
+    }
+    Refresh-SlotList ""
+  }
+  catch {
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Delete Slot Failed")
+    Add-Log("Delete slot failed: $($_.Exception.Message)")
+  }
+})
+
 $btnOpenFolder.Add_Click({
   Start-Process explorer.exe $runnerRoot | Out-Null
 })
@@ -312,5 +500,6 @@ $form.Add_FormClosed({
 })
 
 Add-Log("Runner root: $runnerRoot")
-Add-Log("Tip: install first, then login, then start runner.")
+Add-Log("Tip: install first, login, then save account slot.")
+Refresh-SlotList ""
 [void]$form.ShowDialog()
