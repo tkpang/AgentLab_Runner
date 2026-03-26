@@ -23,6 +23,12 @@ Windows (PowerShell，在 runner 独立仓库执行):
 powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -InstallAll
 ```
 
+Windows（双击方式，不闪退，推荐给非命令行用户）:
+
+```bat
+scripts\setup-windows.cmd
+```
+
 2. 启动 runner
 
 Linux/Ubuntu:
@@ -35,6 +41,12 @@ Windows:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/start-runner.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx"
+```
+
+Windows（双击方式）:
+
+```bat
+scripts\start-runner.cmd
 ```
 
 说明：
@@ -56,6 +68,11 @@ RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash runner/scripts/st
 - 至少一个 Agent CLI（Codex 或 Claude Code）
 
 脚本已尽量把“必需安装”收敛到以上两项，不再要求额外全局 npm 环境配置。
+
+## 关于“右键运行闪退”
+
+- Windows 的“右键 -> 使用 PowerShell 运行”本身会在脚本结束后自动关闭窗口，容易看不到错误信息。
+- 建议优先使用 `scripts\setup-windows.cmd` / `scripts\start-runner.cmd`（已内置 `-NoExit`），或者在终端中手动执行 `.ps1`。
 
 ## 可选环境变量
 
