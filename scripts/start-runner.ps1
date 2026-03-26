@@ -3,6 +3,14 @@ param(
   [string]$Token = ""
 )
 
+function Add-PathOnce([string]$path) {
+  if ([string]::IsNullOrWhiteSpace($path)) { return }
+  if (-not (Test-Path $path)) { return }
+  $parts = $env:PATH -split ";"
+  if ($parts -contains $path) { return }
+  $env:PATH = "$path;$env:PATH"
+}
+
 if ([string]::IsNullOrWhiteSpace($Token)) {
   if (-not [string]::IsNullOrWhiteSpace($env:RUNNER_TOKEN)) {
     $Token = $env:RUNNER_TOKEN
@@ -19,12 +27,25 @@ if ([string]::IsNullOrWhiteSpace($Token)) {
 $env:RUNNER_SERVER = $Server
 $env:RUNNER_TOKEN = $Token
 
-$entryTs = "runner/src/agentlab-runner.ts"
-if (-not (Test-Path $entryTs)) {
-  $entryTs = "src/agentlab-runner.ts"
+if (Test-Path "runner/src/agentlab-runner.ts") {
+  $runnerRoot = (Resolve-Path "runner").Path
+  $entryTs = Join-Path $runnerRoot "src/agentlab-runner.ts"
+}
+else {
+  $runnerRoot = (Get-Location).Path
+  $entryTs = Join-Path $runnerRoot "src/agentlab-runner.ts"
 }
 if (-not (Test-Path $entryTs)) {
   Write-Host "Cannot find runner entry file. Expected runner/src/agentlab-runner.ts or src/agentlab-runner.ts" -ForegroundColor Red
+  exit 1
+}
+
+Add-PathOnce (Join-Path $runnerRoot ".runtime/node/current")
+Add-PathOnce (Join-Path $runnerRoot ".tools/npm-global")
+Add-PathOnce (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin")
+
+if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
+  Write-Host "npx not found. Please run setup-windows.ps1 first." -ForegroundColor Red
   exit 1
 }
 

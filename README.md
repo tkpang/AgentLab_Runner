@@ -23,13 +23,7 @@ Windows (PowerShell，在 runner 独立仓库执行):
 powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -InstallAll
 ```
 
-2. 安装 runner 自身依赖
-
-```bash
-npm install
-```
-
-3. 启动 runner
+2. 启动 runner
 
 Linux/Ubuntu:
 
@@ -43,12 +37,25 @@ Windows:
 powershell -ExecutionPolicy Bypass -File scripts/start-runner.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx"
 ```
 
+说明：
+- `setup-*` 脚本会自动安装 runner 依赖（`npm install`），不需要再手工执行。
+- 默认把 `codex/claude` 安装到 runner 本地目录（`.tools/npm-global`），不污染系统全局环境。
+- 若系统没有可用 Node.js，脚本会优先尝试系统安装；失败时回退到 runner 内的便携 Node（`.runtime`）。
+
 如果你在主仓库中运行（runner 作为子目录），命令前加 `runner/` 前缀即可，例如：
 
 ```bash
 bash runner/scripts/setup-ubuntu.sh --all
 RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash runner/scripts/start-runner.sh
 ```
+
+## 最小必需环境
+
+为了运行 runner，本质必需项只有：
+- Node.js 20+（runner 进程与 CLI 依赖）
+- 至少一个 Agent CLI（Codex 或 Claude Code）
+
+脚本已尽量把“必需安装”收敛到以上两项，不再要求额外全局 npm 环境配置。
 
 ## 可选环境变量
 
