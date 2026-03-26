@@ -2,6 +2,7 @@ param(
   [switch]$InstallCodex,
   [switch]$InstallClaude,
   [switch]$InstallAll,
+  [switch]$EmitGuiEvents,
   [switch]$SkipNodeInstall,
   [switch]$SkipRunnerDeps,
   [switch]$UseChinaMirror,
@@ -56,8 +57,92 @@ function Resolve-NpmCommand([string]$portableNodeBin) {
   throw "npm not found. Please rerun setup."
 }
 
+function Emit-GuiEvent([string]$type, [hashtable]$payload = @{}) {
+  if (-not $EmitGuiEvents.IsPresent) { return }
+  $obj = [ordered]@{
+    type = $type
+    ts = (Get-Date).ToString("o")
+  }
+  foreach ($k in $payload.Keys) {
+    $obj[$k] = $payload[$k]
+  }
+  $json = $obj | ConvertTo-Json -Compress -Depth 8
+  Write-Output ("__AL_EVENT__:" + $json)
+}
+
+function Emit-Step([string]$id, [string]$message) {
+  Emit-GuiEvent -type "step" -payload @{
+    id = $id
+    message = $message
+  }
+}
+
+function Download-FileWithProgress([string]$url, [string]$outFile, [string]$eventId) {
+  $request = $null
+  $response = $null
+  $stream = $null
+  $file = $null
+  try {
+    $request = [System.Net.HttpWebRequest]::Create($url)
+    $request.Method = "GET"
+    $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+    $response = $request.GetResponse()
+    $stream = $response.GetResponseStream()
+    $total = [int64]$response.ContentLength
+
+    $file = [System.IO.File]::Open($outFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    $buffer = New-Object byte[] 65536
+    $read = 0
+    $written = [int64]0
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    $lastEmitMs = -1
+
+    while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+      $file.Write($buffer, 0, $read)
+      $written += $read
+      $nowMs = [int64]$sw.ElapsedMilliseconds
+      if ($lastEmitMs -lt 0 -or ($nowMs - $lastEmitMs) -ge 700) {
+        $sec = [Math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+        $bps = [double]($written / $sec)
+        $percent = -1
+        if ($total -gt 0) {
+          $percent = [int][Math]::Floor(($written * 100.0) / $total)
+          if ($percent -gt 100) { $percent = 100 }
+        }
+        Emit-GuiEvent -type "download" -payload @{
+          id = $eventId
+          bytes = $written
+          total = $total
+          percent = $percent
+          bps = [Math]::Round($bps, 2)
+        }
+        $lastEmitMs = $nowMs
+      }
+    }
+
+    $finalPercent = if ($total -gt 0) { 100 } else { -1 }
+    $finalBps = [double]0
+    if ($sw.Elapsed.TotalSeconds -gt 0) {
+      $finalBps = [double]($written / [Math]::Max($sw.Elapsed.TotalSeconds, 0.001))
+    }
+    Emit-GuiEvent -type "download" -payload @{
+      id = $eventId
+      bytes = $written
+      total = $total
+      percent = $finalPercent
+      bps = [Math]::Round($finalBps, 2)
+    }
+  }
+  finally {
+    if ($file) { $file.Dispose() }
+    if ($stream) { $stream.Dispose() }
+    if ($response) { $response.Dispose() }
+  }
+}
+
 function Install-PortableNode20([string]$runtimeRoot, [string]$portableNodeBin, [string]$nodeDistBaseUrl) {
   Write-Host "[setup] Installing portable Node.js 20 (no admin required)..."
+  Emit-Step "download_node" "Downloading portable Node.js 20..."
   New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
 
   $baseCandidates = @()
@@ -84,7 +169,8 @@ function Install-PortableNode20([string]$runtimeRoot, [string]$portableNodeBin, 
       if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue }
       if (Test-Path $extractRoot) { Remove-Item -Path $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
 
-      Invoke-WebRequest -UseBasicParsing -Uri $zipUrl -OutFile $zipPath
+      Write-Host ("[setup] Downloading Node.js from: " + $zipUrl)
+      Download-FileWithProgress -url $zipUrl -outFile $zipPath -eventId "node_zip"
       Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
       $nodeDir = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
       if ($null -eq $nodeDir) {
@@ -164,6 +250,7 @@ if ($UseChinaMirror.IsPresent) {
 }
 
 try {
+  Emit-Step "prepare" "Preparing environment..."
   $runnerRoot = Resolve-RunnerRoot
   $runtimeRoot = Join-Path $runnerRoot ".runtime"
   $portableNodeBin = Join-Path $runtimeRoot "node/current"
@@ -189,6 +276,7 @@ try {
   }
 
   if ($wantCodex) {
+    Emit-Step "install_codex" "Installing Codex CLI..."
     Write-Host "[setup] Installing Codex CLI (@openai/codex) to local runner tools..."
     $codexArgs = @("install", "-g", "--prefix", $npmGlobalPrefix) + $npmCommonArgs
     if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
@@ -199,6 +287,7 @@ try {
   }
 
   if ($wantClaude) {
+    Emit-Step "install_claude" "Installing Claude Code CLI..."
     Write-Host "[setup] Installing Claude Code CLI (@anthropic-ai/claude-code) to local runner tools..."
     $claudeArgs = @("install", "-g", "--prefix", $npmGlobalPrefix) + $npmCommonArgs
     if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
@@ -209,6 +298,7 @@ try {
   }
 
   if (-not $SkipRunnerDeps.IsPresent) {
+    Emit-Step "install_deps" "Installing runner dependencies..."
     Write-Host "[setup] Installing runner dependencies..."
     $depsArgs = @("--prefix", $runnerRoot, "install") + $npmCommonArgs
     if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
@@ -217,6 +307,7 @@ try {
     & $npmCmd @depsArgs
   }
 
+  Emit-Step "verify" "Verifying installation..."
   Write-Host ""
   Write-Host "==== Verification ===="
   if (Test-Cmd "node") { node --version }
@@ -230,8 +321,11 @@ try {
   Write-Host "1) Authenticate selected CLI(s): codex login / claude login"
   Write-Host "2) Start runner:"
   Write-Host ('   powershell -ExecutionPolicy Bypass -File "' + $startScript + '" -Server "http://127.0.0.1:3200" -Token "xxxx"')
+  Emit-Step "done" "Setup finished."
+  Emit-GuiEvent -type "done" -payload @{ ok = $true }
 }
 catch {
   Write-Host ("[setup] failed: " + $_.Exception.Message) -ForegroundColor Red
+  Emit-GuiEvent -type "done" -payload @{ ok = $false; error = $_.Exception.Message }
   exit 1
 }

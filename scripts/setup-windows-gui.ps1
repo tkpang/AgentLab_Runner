@@ -320,10 +320,25 @@ $progressInstall.MarqueeAnimationSpeed = 25
 $progressInstall.Visible = $false
 $form.Controls.Add($progressInstall)
 
+$lblInstallStep = New-Object System.Windows.Forms.Label
+$lblInstallStep.Text = ""
+$lblInstallStep.AutoSize = $false
+$lblInstallStep.Location = New-Object System.Drawing.Point(20, 878)
+$lblInstallStep.Size = New-Object System.Drawing.Size(620, 18)
+$form.Controls.Add($lblInstallStep)
+
+$lblInstallSpeed = New-Object System.Windows.Forms.Label
+$lblInstallSpeed.Text = ""
+$lblInstallSpeed.AutoSize = $false
+$lblInstallSpeed.Location = New-Object System.Drawing.Point(640, 878)
+$lblInstallSpeed.Size = New-Object System.Drawing.Size(280, 18)
+$lblInstallSpeed.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+$form.Controls.Add($lblInstallSpeed)
+
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready"
 $status.AutoSize = $true
-$status.Location = New-Object System.Drawing.Point(22, 880)
+$status.Location = New-Object System.Drawing.Point(22, 900)
 $form.Controls.Add($status)
 
 $toolTip = New-Object System.Windows.Forms.ToolTip
@@ -391,6 +406,16 @@ function T([string]$k) {
       "task_install_env" { return "Installing environment..." }
       "task_verify_env" { return "Verifying environment..." }
       "task_check_login" { return "Checking login status..." }
+      "step_prepare" { return "Preparing environment..." }
+      "step_download_node" { return "Downloading portable Node.js..." }
+      "step_install_codex" { return "Installing Codex CLI..." }
+      "step_install_claude" { return "Installing Claude CLI..." }
+      "step_install_deps" { return "Installing runner dependencies..." }
+      "step_verify" { return "Verifying installation..." }
+      "step_done" { return "Setup finished." }
+      "speed_unknown" { return "Speed: -" }
+      "speed_fmt_kb" { return "Speed: {0:N1} KB/s" }
+      "speed_fmt_mb" { return "Speed: {0:N2} MB/s" }
       "msg_busy" { return "A task is already running. Please wait." }
       "msg_select_cli" { return "Select at least one CLI (Codex or Claude)." }
       "msg_slot_required" { return "Please enter a slot name." }
@@ -475,6 +500,16 @@ function T([string]$k) {
     "task_install_env" { return "正在安装环境..." }
     "task_verify_env" { return "正在检测环境..." }
     "task_check_login" { return "正在检查登录状态..." }
+    "step_prepare" { return "正在准备环境..." }
+    "step_download_node" { return "正在下载便携版 Node.js..." }
+    "step_install_codex" { return "正在安装 Codex CLI..." }
+    "step_install_claude" { return "正在安装 Claude CLI..." }
+    "step_install_deps" { return "正在安装 Runner 依赖..." }
+    "step_verify" { return "正在校验安装结果..." }
+    "step_done" { return "安装完成。" }
+    "speed_unknown" { return "速度：-" }
+    "speed_fmt_kb" { return "速度：{0:N1} KB/s" }
+    "speed_fmt_mb" { return "速度：{0:N2} MB/s" }
     "msg_busy" { return "已有任务在执行，请稍候。" }
     "msg_select_cli" { return "请至少勾选一个 CLI（Codex 或 Claude）。" }
     "msg_slot_required" { return "请输入槽位名称。" }
@@ -517,6 +552,78 @@ function LT([string]$key, [object[]]$fmtArgs = @()) {
     return [string]::Format($template, [object[]]$fmtArgs)
   }
   return $template
+}
+
+function Resolve-StepText([string]$stepId, [string]$fallback = "") {
+  switch ($stepId) {
+    "prepare" { return T "step_prepare" }
+    "download_node" { return T "step_download_node" }
+    "install_codex" { return T "step_install_codex" }
+    "install_claude" { return T "step_install_claude" }
+    "install_deps" { return T "step_install_deps" }
+    "verify" { return T "step_verify" }
+    "done" { return T "step_done" }
+    default {
+      if (-not [string]::IsNullOrWhiteSpace($fallback)) { return $fallback }
+      return ""
+    }
+  }
+}
+
+function Format-SpeedText([double]$bps) {
+  if ($bps -le 0) { return T "speed_unknown" }
+  $kb = $bps / 1024.0
+  if ($kb -ge 1024.0) {
+    return LT "speed_fmt_mb" @($kb / 1024.0)
+  }
+  return LT "speed_fmt_kb" @($kb)
+}
+
+function Try-HandleGuiEvent([string]$line) {
+  if ([string]::IsNullOrWhiteSpace($line)) { return $false }
+  if (-not $line.StartsWith("__AL_EVENT__:")) { return $false }
+  $json = $line.Substring(13)
+  if ([string]::IsNullOrWhiteSpace($json)) { return $true }
+  try {
+    $evt = $json | ConvertFrom-Json -Depth 8
+    $etype = [string]$evt.type
+    switch ($etype) {
+      "step" {
+        $stepText = Resolve-StepText ([string]$evt.id) ([string]$evt.message)
+        if (-not [string]::IsNullOrWhiteSpace($stepText)) {
+          $lblInstallStep.Text = $stepText
+          $status.Text = $stepText
+          $progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+          $progressInstall.MarqueeAnimationSpeed = 25
+        }
+      }
+      "download" {
+        $pct = -1
+        $bps = 0.0
+        try { $pct = [int]$evt.percent } catch { $pct = -1 }
+        try { $bps = [double]$evt.bps } catch { $bps = 0.0 }
+        if ($pct -ge 0 -and $pct -le 100) {
+          if ($progressInstall.Style -ne [System.Windows.Forms.ProgressBarStyle]::Continuous) {
+            $progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+          }
+          if ($pct -lt $progressInstall.Minimum) { $pct = $progressInstall.Minimum }
+          if ($pct -gt $progressInstall.Maximum) { $pct = $progressInstall.Maximum }
+          $progressInstall.Value = $pct
+          $lblInstallStep.Text = (Resolve-StepText "download_node" "") + " " + $pct + "%"
+          $status.Text = $lblInstallStep.Text
+        }
+        $lblInstallSpeed.Text = Format-SpeedText $bps
+      }
+      "done" {
+        $lblInstallStep.Text = Resolve-StepText "done" ""
+      }
+      default {}
+    }
+  }
+  catch {
+    Add-Log("Event parse failed: $($_.Exception.Message)")
+  }
+  return $true
 }
 
 function Resolve-ToolPath([string]$tool, [string[]]$candidatePaths) {
@@ -693,6 +800,9 @@ function Apply-Language() {
   } else {
     $btnLanguage.Text = "中文"
   }
+  if ($progressInstall.Visible -and [string]::IsNullOrWhiteSpace($lblInstallSpeed.Text) -eq $false) {
+    $lblInstallSpeed.Text = T "speed_unknown"
+  }
 }
 
 function Add-Log([string]$message) {
@@ -719,8 +829,16 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $cbMirror.Enabled = -not $busy
   $progressInstall.Visible = $busy
   if ($busy) {
+    $progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+    $progressInstall.MarqueeAnimationSpeed = 25
+    $lblInstallStep.Text = $text
+    $lblInstallSpeed.Text = T "speed_unknown"
     $status.Text = $text
   } else {
+    $progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Continuous
+    $progressInstall.Value = 0
+    $lblInstallStep.Text = ""
+    $lblInstallSpeed.Text = ""
     $status.Text = T "ready"
   }
 }
@@ -853,6 +971,7 @@ $timer.Add_Tick({
   $chunk = Receive-Job -Job $script:activeJob -ErrorAction SilentlyContinue
   foreach ($line in $chunk) {
     $s = "$line"
+    if (Try-HandleGuiEvent $s) { continue }
     if ($s.StartsWith("__EXIT_CODE__:")) {
       $exitCode = $s.Substring(12)
       if ($exitCode -eq "0") {
@@ -869,6 +988,7 @@ $timer.Add_Tick({
     $tail = Receive-Job -Job $script:activeJob -ErrorAction SilentlyContinue
     foreach ($line in $tail) {
       $s = "$line"
+      if (Try-HandleGuiEvent $s) { continue }
       if ($s.StartsWith("__EXIT_CODE__:")) {
         $exitCode = $s.Substring(12)
         if ($exitCode -eq "0") {
@@ -895,7 +1015,8 @@ $btnInstall.Add_Click({
   }
   $installArgs = @(
     "-InstallCodex:$($cbCodex.Checked.ToString().ToLowerInvariant())",
-    "-InstallClaude:$($cbClaude.Checked.ToString().ToLowerInvariant())"
+    "-InstallClaude:$($cbClaude.Checked.ToString().ToLowerInvariant())",
+    "-EmitGuiEvents"
   )
   if ($cbMirror.Checked) {
     $installArgs += "-UseChinaMirror"

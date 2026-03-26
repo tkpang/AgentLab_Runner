@@ -75,6 +75,7 @@ GUI 安装器支持：
 - 启动后自动检测 Node / Codex / Claude，顶部显示红绿状态灯（可悬浮看路径）
 - 多账号槽位：`Save Slot / Activate Slot / Delete Slot`
 - 余量查询：刷新后展示当前账号 5h / 7d 剩余额度（进度条 + 百分比）
+- 安装时显示“当前步骤 + 下载速率（KB/s/MB/s）”，避免误判卡死
 - 填写 Server/Token 后一键启动 runner
 - 默认中文界面，可一键切换英文；日志提示也会跟随语言切换
 
