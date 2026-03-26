@@ -1,0 +1,21 @@
+{
+  "name": "@agentlab/runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AgentLab standalone runner daemon",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/agentlab-runner.ts",
+    "start:linux": "bash ./scripts/start-runner.sh",
+    "start:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/start-runner.ps1"
+  },
+  "dependencies": {
+    "tsx": "^4.20.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

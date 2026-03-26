@@ -1,0 +1,81 @@
+# AgentLab Runner
+
+`runner/` 是可独立发布的执行端，用于接收 AgentLab Server 下发的作业并在本机执行。
+
+## 目标
+
+- 可单独开源、单独发版（不依赖服务端源码）。
+- 支持 Linux（Ubuntu）和 Windows。
+- 支持快速一键配置 Codex / Claude Code（可二选一或都装）。
+
+## 快速开始
+
+1. 安装依赖（任选其一）  
+Linux/Ubuntu（在 runner 独立仓库执行）:
+
+```bash
+bash scripts/setup-ubuntu.sh --all
+```
+
+Windows (PowerShell，在 runner 独立仓库执行):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -InstallAll
+```
+
+2. 安装 runner 自身依赖
+
+```bash
+npm install
+```
+
+3. 启动 runner
+
+Linux/Ubuntu:
+
+```bash
+RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash scripts/start-runner.sh
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-runner.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx"
+```
+
+如果你在主仓库中运行（runner 作为子目录），命令前加 `runner/` 前缀即可，例如：
+
+```bash
+bash runner/scripts/setup-ubuntu.sh --all
+RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash runner/scripts/start-runner.sh
+```
+
+## 可选环境变量
+
+- `RUNNER_SERVER`: 服务端地址（默认 `http://127.0.0.1:3200`）
+- `RUNNER_TOKEN`: 必填，Runner Token
+- `RUNNER_ID`: 可选，Runner 唯一标识
+- `RUNNER_CODEX_EXECUTION_MODE`: `auto` / `sandboxed` / `unsafe`
+
+## 认证说明
+
+- Codex CLI 安装后请自行完成登录认证（例如运行 `codex login`）。
+- Claude Code CLI 安装后请自行完成登录认证（例如运行 `claude login` 或配置对应 API 凭证）。
+
+## 作为独立仓库维护（子仓库）
+
+推荐用 `git subtree` 维护 `runner/`，方便主仓与 runner 仓分离：
+
+```bash
+# 在主仓执行，产出 runner-only 分支
+git subtree split --prefix runner -b runner-release
+
+# 推送到 runner 独立仓库
+git push <runner-remote> runner-release:main --force
+```
+
+也可使用项目内脚本：
+
+```bash
+bash ../scripts/runner/split-runner-subrepo.sh <runner-remote>
+```
