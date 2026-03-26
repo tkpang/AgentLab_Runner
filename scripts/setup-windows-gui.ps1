@@ -555,7 +555,7 @@ function T([string]$k) {
     "msg_confirm_delete" { return "确认删除槽位 '" }
     "msg_confirm_delete_tail" { return "' 吗？" }
     "msg_codex_device_title" { return "Codex 登录" }
-    "msg_codex_device_body" { return "已启动浏览器登录。`n`nURL：`n{0}`n`n验证码（已复制到剪贴板）：{1}`n`n在浏览器确认后，请点击“检查登录状态”。" }
+    "msg_codex_device_body" { return "已启动浏览器登录。`n`nURL：`n{0}`n`n验证码（已复制到剪贴板）：{1}`n`n在浏览器确认后，请点击【检查登录状态】。" }
     "msg_claude_login_title" { return "Claude 登录" }
     "msg_claude_login_body" { return "已启动 Claude 登录引导。`n`n浏览器已打开登录页面，同时终端会执行 `claude login`。`n`n如果你当前没有 Claude 账户，可直接关闭并继续只使用 Codex。" }
     "title_save_slot_failed" { return "保存槽位失败" }
