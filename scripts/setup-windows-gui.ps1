@@ -8,6 +8,8 @@ $startScript = Join-Path $scriptDir "start-runner.ps1"
 $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
 $authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
+$codexDeviceLoginScript = Join-Path $scriptDir "login-codex-device.ps1"
+$uninstallScript = Join-Path $scriptDir "uninstall-windows.ps1"
 $accountSlotsScript = Join-Path $scriptDir "account-slots-windows.ps1"
 $quotaScript = Join-Path $scriptDir "quota-status-windows.ps1"
 
@@ -83,9 +85,15 @@ $btnOpenFolder.Location = New-Object System.Drawing.Point(268, 86)
 $btnOpenFolder.Size = New-Object System.Drawing.Size(150, 28)
 $groupInstall.Controls.Add($btnOpenFolder)
 
+$btnUninstall = New-Object System.Windows.Forms.Button
+$btnUninstall.Text = "Uninstall Selected"
+$btnUninstall.Location = New-Object System.Drawing.Point(428, 86)
+$btnUninstall.Size = New-Object System.Drawing.Size(160, 28)
+$groupInstall.Controls.Add($btnUninstall)
+
 $lblEnvNode = New-Object System.Windows.Forms.Label
 $lblEnvNode.Text = "Node: -"
-$lblEnvNode.Location = New-Object System.Drawing.Point(440, 32)
+$lblEnvNode.Location = New-Object System.Drawing.Point(610, 32)
 $lblEnvNode.Size = New-Object System.Drawing.Size(130, 24)
 $lblEnvNode.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $lblEnvNode.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
@@ -93,7 +101,7 @@ $groupInstall.Controls.Add($lblEnvNode)
 
 $lblEnvCodex = New-Object System.Windows.Forms.Label
 $lblEnvCodex.Text = "Codex: -"
-$lblEnvCodex.Location = New-Object System.Drawing.Point(580, 32)
+$lblEnvCodex.Location = New-Object System.Drawing.Point(750, 32)
 $lblEnvCodex.Size = New-Object System.Drawing.Size(130, 24)
 $lblEnvCodex.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $lblEnvCodex.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
@@ -101,11 +109,18 @@ $groupInstall.Controls.Add($lblEnvCodex)
 
 $lblEnvClaude = New-Object System.Windows.Forms.Label
 $lblEnvClaude.Text = "Claude: -"
-$lblEnvClaude.Location = New-Object System.Drawing.Point(720, 32)
-$lblEnvClaude.Size = New-Object System.Drawing.Size(150, 24)
+$lblEnvClaude.Location = New-Object System.Drawing.Point(610, 58)
+$lblEnvClaude.Size = New-Object System.Drawing.Size(270, 24)
 $lblEnvClaude.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $lblEnvClaude.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
 $groupInstall.Controls.Add($lblEnvClaude)
+
+$cbRemoveNode = New-Object System.Windows.Forms.CheckBox
+$cbRemoveNode.Text = "Also remove Node runtime"
+$cbRemoveNode.Checked = $false
+$cbRemoveNode.AutoSize = $true
+$cbRemoveNode.Location = New-Object System.Drawing.Point(260, 58)
+$groupInstall.Controls.Add($cbRemoveNode)
 
 $groupLogin = New-Object System.Windows.Forms.GroupBox
 $groupLogin.Text = "2) Login + Multi-Account Slots"
@@ -365,9 +380,11 @@ function T([string]$k) {
       "install_codex" { return "Install Codex" }
       "install_claude" { return "Install Claude Code" }
       "use_mirror" { return "Use China Mirror (faster in CN)" }
+      "remove_node" { return "Also remove Node runtime" }
       "btn_install" { return "Install / Repair" }
       "btn_verify" { return "Verify" }
       "btn_open_folder" { return "Open Runner Folder" }
+      "btn_uninstall" { return "Uninstall Selected" }
       "group_login" { return "2) Login + Multi-Account Slots" }
       "btn_login_codex" { return "Login Codex" }
       "btn_login_claude" { return "Login Claude" }
@@ -404,6 +421,8 @@ function T([string]$k) {
       "group_logs" { return "Logs" }
       "ready" { return "Ready" }
       "task_install_env" { return "Installing environment..." }
+      "task_uninstall_env" { return "Uninstalling selected tools..." }
+      "task_codex_device_login" { return "Starting Codex browser login..." }
       "task_verify_env" { return "Verifying environment..." }
       "task_check_login" { return "Checking login status..." }
       "step_prepare" { return "Preparing environment..." }
@@ -418,12 +437,17 @@ function T([string]$k) {
       "speed_fmt_mb" { return "Speed: {0:N2} MB/s" }
       "msg_busy" { return "A task is already running. Please wait." }
       "msg_select_cli" { return "Select at least one CLI (Codex or Claude)." }
+      "msg_select_uninstall" { return "Select at least one target to uninstall (Codex/Claude/Node)." }
+      "msg_confirm_uninstall" { return "Uninstall selected items?`n`n{0}" }
+      "title_uninstall" { return "Uninstall" }
       "msg_slot_required" { return "Please enter a slot name." }
       "msg_no_slot_activate" { return "Please select a slot to activate." }
       "msg_no_slot_delete" { return "Please select a slot to delete." }
       "msg_token_required" { return "Please input RUNNER_TOKEN first." }
       "msg_confirm_delete" { return "Delete slot '" }
       "msg_confirm_delete_tail" { return "' ?" }
+      "msg_codex_device_title" { return "Codex Login" }
+      "msg_codex_device_body" { return "Browser login started.`n`nURL:`n{0}`n`nCode (copied to clipboard): {1}`n`nAfter confirming in browser, click 'Check Login Status'." }
       "title_save_slot_failed" { return "Save Slot Failed" }
       "title_activate_slot_failed" { return "Activate Slot Failed" }
       "title_delete_slot_failed" { return "Delete Slot Failed" }
@@ -458,11 +482,13 @@ function T([string]$k) {
     "group_install" { return "1) 安装 / 修复环境" }
     "install_codex" { return "安装 Codex" }
     "install_claude" { return "安装 Claude Code" }
-    "use_mirror" { return "使用国内镜像加速" }
-    "btn_install" { return "安装 / 修复" }
-    "btn_verify" { return "环境检测" }
-    "btn_open_folder" { return "打开 Runner 目录" }
-    "group_login" { return "2) 账号登录 + 多账号槽位" }
+      "use_mirror" { return "使用国内镜像加速" }
+      "remove_node" { return "卸载时同时删除 Node 运行时" }
+      "btn_install" { return "安装 / 修复" }
+      "btn_verify" { return "环境检测" }
+      "btn_open_folder" { return "打开 Runner 目录" }
+      "btn_uninstall" { return "卸载所选" }
+      "group_login" { return "2) 账号登录 + 多账号槽位" }
     "btn_login_codex" { return "登录 Codex" }
     "btn_login_claude" { return "登录 Claude" }
     "btn_open_shell" { return "打开 Runner 终端" }
@@ -498,6 +524,8 @@ function T([string]$k) {
     "group_logs" { return "日志" }
     "ready" { return "就绪" }
     "task_install_env" { return "正在安装环境..." }
+    "task_uninstall_env" { return "正在卸载所选工具..." }
+    "task_codex_device_login" { return "正在启动 Codex 浏览器登录..." }
     "task_verify_env" { return "正在检测环境..." }
     "task_check_login" { return "正在检查登录状态..." }
     "step_prepare" { return "正在准备环境..." }
@@ -512,12 +540,17 @@ function T([string]$k) {
     "speed_fmt_mb" { return "速度：{0:N2} MB/s" }
     "msg_busy" { return "已有任务在执行，请稍候。" }
     "msg_select_cli" { return "请至少勾选一个 CLI（Codex 或 Claude）。" }
+    "msg_select_uninstall" { return "请至少选择一个卸载目标（Codex/Claude/Node）。" }
+    "msg_confirm_uninstall" { return "确认卸载以下内容？`n`n{0}" }
+    "title_uninstall" { return "卸载确认" }
     "msg_slot_required" { return "请输入槽位名称。" }
     "msg_no_slot_activate" { return "请先选择要启用的槽位。" }
     "msg_no_slot_delete" { return "请先选择要删除的槽位。" }
     "msg_token_required" { return "请先填写 RUNNER_TOKEN。" }
     "msg_confirm_delete" { return "确认删除槽位 '" }
     "msg_confirm_delete_tail" { return "' 吗？" }
+    "msg_codex_device_title" { return "Codex 登录" }
+    "msg_codex_device_body" { return "已启动浏览器登录。`n`nURL：`n{0}`n`n验证码（已复制到剪贴板）：{1}`n`n在浏览器确认后，请点击“检查登录状态”。" }
     "title_save_slot_failed" { return "保存槽位失败" }
     "title_activate_slot_failed" { return "启用槽位失败" }
     "title_delete_slot_failed" { return "删除槽位失败" }
@@ -616,6 +649,19 @@ function Try-HandleGuiEvent([string]$line) {
       }
       "done" {
         $lblInstallStep.Text = Resolve-StepText "done" ""
+      }
+      "codex_device_auth" {
+        $url = ""
+        $code = ""
+        try { $url = [string]$evt.url } catch {}
+        try { $code = [string]$evt.code } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($code)) {
+          try { [System.Windows.Forms.Clipboard]::SetText($code) } catch {}
+        }
+        if (-not [string]::IsNullOrWhiteSpace($url) -or -not [string]::IsNullOrWhiteSpace($code)) {
+          $msg = LT "msg_codex_device_body" @($url, $code)
+          [System.Windows.Forms.MessageBox]::Show($msg, (T "msg_codex_device_title")) | Out-Null
+        }
       }
       default {}
     }
@@ -763,9 +809,11 @@ function Apply-Language() {
   $cbCodex.Text = T "install_codex"
   $cbClaude.Text = T "install_claude"
   $cbMirror.Text = T "use_mirror"
+  $cbRemoveNode.Text = T "remove_node"
   $btnInstall.Text = T "btn_install"
   $btnVerify.Text = T "btn_verify"
   $btnOpenFolder.Text = T "btn_open_folder"
+  $btnUninstall.Text = T "btn_uninstall"
   $groupLogin.Text = T "group_login"
   $btnCodexLogin.Text = T "btn_login_codex"
   $btnClaudeLogin.Text = T "btn_login_claude"
@@ -815,6 +863,7 @@ function Add-Log([string]$message) {
 
 function Set-Busy([bool]$busy, [string]$text = "") {
   $btnInstall.Enabled = -not $busy
+  $btnUninstall.Enabled = -not $busy
   $btnVerify.Enabled = -not $busy
   $btnAuthStatus.Enabled = -not $busy
   $btnRefreshSlots.Enabled = -not $busy
@@ -827,6 +876,7 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $cbCodex.Enabled = -not $busy
   $cbClaude.Enabled = -not $busy
   $cbMirror.Enabled = -not $busy
+  $cbRemoveNode.Enabled = -not $busy
   $progressInstall.Visible = $busy
   if ($busy) {
     $progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
@@ -1029,6 +1079,33 @@ $btnVerify.Add_Click({
   Start-BackgroundScript (T "task_verify_env") $verifyScript @()
 })
 
+$btnUninstall.Add_Click({
+  $removeCodex = $cbCodex.Checked
+  $removeClaude = $cbClaude.Checked
+  $removeNode = $cbRemoveNode.Checked
+  if (-not $removeCodex -and -not $removeClaude -and -not $removeNode) {
+    [System.Windows.Forms.MessageBox]::Show((T "msg_select_uninstall"), (T "btn_uninstall"))
+    return
+  }
+  $selected = @()
+  if ($removeCodex) { $selected += "Codex" }
+  if ($removeClaude) { $selected += "Claude Code" }
+  if ($removeNode) { $selected += "Node runtime" }
+  $confirm = [System.Windows.Forms.MessageBox]::Show(
+    (LT "msg_confirm_uninstall" @($selected -join "`n")),
+    (T "title_uninstall"),
+    [System.Windows.Forms.MessageBoxButtons]::YesNo,
+    [System.Windows.Forms.MessageBoxIcon]::Warning
+  )
+  if ($confirm -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+
+  $uninstallArgs = @()
+  if ($removeCodex) { $uninstallArgs += "-RemoveCodex" }
+  if ($removeClaude) { $uninstallArgs += "-RemoveClaude" }
+  if ($removeNode) { $uninstallArgs += "-RemoveNode" }
+  Start-BackgroundScript (T "task_uninstall_env") $uninstallScript $uninstallArgs
+})
+
 $btnAuthStatus.Add_Click({
   Start-BackgroundScript (T "task_check_login") $authStatusScript @()
 })
@@ -1111,8 +1188,7 @@ $btnOpenFolder.Add_Click({
 })
 
 $btnCodexLogin.Add_Click({
-  Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$shellScript,"-Command","codex login") -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log (LT "log_opened_terminal" @("codex login"))
+  Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @("-OpenBrowser")
 })
 
 $btnClaudeLogin.Add_Click({

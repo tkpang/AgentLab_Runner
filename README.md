@@ -47,6 +47,18 @@ Windows（图形化安装器，推荐给小白用户）:
 scripts\setup-windows-gui.cmd
 ```
 
+Windows（卸载本地工具，按需）:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/uninstall-windows.ps1 -RemoveCodex -RemoveClaude -RemoveNode
+```
+
+或：
+
+```bat
+scripts\uninstall-windows.cmd -RemoveCodex -RemoveClaude -RemoveNode
+```
+
 2. 启动 runner
 
 Linux/Ubuntu:
@@ -70,9 +82,11 @@ scripts\start-runner.cmd
 GUI 安装器支持：
 - 勾选安装 Codex / Claude
 - 勾选中国镜像加速
-- 一键打开 `codex login` / `claude login`
+- Codex 一键网页登录（自动打开浏览器 + 自动复制设备码）
+- Claude 一键打开登录终端
 - 一键检查登录状态（`Check Login Status`）
 - 启动后自动检测 Node / Codex / Claude，顶部显示红绿状态灯（可悬浮看路径）
+- 一键卸载所选工具（Codex / Claude / 可选 Node runtime）
 - 多账号槽位：`Save Slot / Activate Slot / Delete Slot`
 - 余量查询：刷新后展示当前账号 5h / 7d 剩余额度（进度条 + 百分比）
 - 安装时显示“当前步骤 + 下载速率（KB/s/MB/s）”，避免误判卡死
