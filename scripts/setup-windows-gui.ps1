@@ -29,6 +29,12 @@ $subTitle.AutoSize = $true
 $subTitle.Location = New-Object System.Drawing.Point(22, 46)
 $form.Controls.Add($subTitle)
 
+$btnLanguage = New-Object System.Windows.Forms.Button
+$btnLanguage.Text = "EN"
+$btnLanguage.Location = New-Object System.Drawing.Point(810, 16)
+$btnLanguage.Size = New-Object System.Drawing.Size(70, 30)
+$form.Controls.Add($btnLanguage)
+
 $groupInstall = New-Object System.Windows.Forms.GroupBox
 $groupInstall.Text = "1) Install / Repair Environment"
 $groupInstall.Location = New-Object System.Drawing.Point(20, 80)
@@ -215,6 +221,141 @@ $form.Controls.Add($status)
 $script:activeJob = $null
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350
+$script:lang = "zh"
+$script:activeSlotName = ""
+
+function T([string]$k) {
+  if ($script:lang -eq "en") {
+    switch ($k) {
+      "form_title" { return "AgentLab Runner Setup (Windows)" }
+      "title" { return "AgentLab Runner - One-click Setup" }
+      "subtitle" { return "Install local Node/Codex/Claude, login, switch accounts, and start runner. All tools are kept under this runner folder." }
+      "group_install" { return "1) Install / Repair Environment" }
+      "install_codex" { return "Install Codex" }
+      "install_claude" { return "Install Claude Code" }
+      "use_mirror" { return "Use China Mirror (faster in CN)" }
+      "btn_install" { return "Install / Repair" }
+      "btn_verify" { return "Verify" }
+      "btn_open_folder" { return "Open Runner Folder" }
+      "group_login" { return "2) Login + Multi-Account Slots" }
+      "btn_login_codex" { return "Login Codex" }
+      "btn_login_claude" { return "Login Claude" }
+      "btn_open_shell" { return "Open Runner Shell" }
+      "btn_check_login" { return "Check Login Status" }
+      "label_slots" { return "Account Slots:" }
+      "btn_refresh_slots" { return "Refresh Slots" }
+      "btn_activate_slot" { return "Activate Slot" }
+      "btn_delete_slot" { return "Delete Slot" }
+      "label_save_as" { return "Save Current As:" }
+      "btn_save_slot" { return "Save Slot" }
+      "active_slot_none" { return "Active Slot: (none)" }
+      "active_slot" { return "Active Slot: " }
+      "group_start" { return "3) Start Runner" }
+      "label_server" { return "Server:" }
+      "label_token" { return "Token:" }
+      "btn_start_runner" { return "Start Runner" }
+      "group_logs" { return "Logs" }
+      "ready" { return "Ready" }
+      "msg_busy" { return "A task is already running. Please wait." }
+      "msg_select_cli" { return "Select at least one CLI (Codex or Claude)." }
+      "msg_slot_required" { return "Please enter a slot name." }
+      "msg_no_slot_activate" { return "Please select a slot to activate." }
+      "msg_no_slot_delete" { return "Please select a slot to delete." }
+      "msg_token_required" { return "Please input RUNNER_TOKEN first." }
+      "msg_confirm_delete" { return "Delete slot '" }
+      "msg_confirm_delete_tail" { return "' ?" }
+      "log_tip" { return "Tip: install first, login, then save account slot." }
+      default { return $k }
+    }
+  }
+  switch ($k) {
+    "form_title" { return "AgentLab Runner 安装器 (Windows)" }
+    "title" { return "AgentLab Runner - 一键配置" }
+    "subtitle" { return "安装本地 Node/Codex/Claude，登录账号，切换多账号，并启动 runner。工具都保存在当前 runner 目录。" }
+    "group_install" { return "1) 安装 / 修复环境" }
+    "install_codex" { return "安装 Codex" }
+    "install_claude" { return "安装 Claude Code" }
+    "use_mirror" { return "使用国内镜像加速" }
+    "btn_install" { return "安装 / 修复" }
+    "btn_verify" { return "环境检测" }
+    "btn_open_folder" { return "打开 Runner 目录" }
+    "group_login" { return "2) 账号登录 + 多账号槽位" }
+    "btn_login_codex" { return "登录 Codex" }
+    "btn_login_claude" { return "登录 Claude" }
+    "btn_open_shell" { return "打开 Runner 终端" }
+    "btn_check_login" { return "检查登录状态" }
+    "label_slots" { return "账号槽位：" }
+    "btn_refresh_slots" { return "刷新槽位" }
+    "btn_activate_slot" { return "启用槽位" }
+    "btn_delete_slot" { return "删除槽位" }
+    "label_save_as" { return "保存当前账号为：" }
+    "btn_save_slot" { return "保存槽位" }
+    "active_slot_none" { return "当前槽位：无" }
+    "active_slot" { return "当前槽位：" }
+    "group_start" { return "3) 启动 Runner" }
+    "label_server" { return "服务端：" }
+    "label_token" { return "Token：" }
+    "btn_start_runner" { return "启动 Runner" }
+    "group_logs" { return "日志" }
+    "ready" { return "就绪" }
+    "msg_busy" { return "已有任务在执行，请稍候。" }
+    "msg_select_cli" { return "请至少勾选一个 CLI（Codex 或 Claude）。" }
+    "msg_slot_required" { return "请输入槽位名称。" }
+    "msg_no_slot_activate" { return "请先选择要启用的槽位。" }
+    "msg_no_slot_delete" { return "请先选择要删除的槽位。" }
+    "msg_token_required" { return "请先填写 RUNNER_TOKEN。" }
+    "msg_confirm_delete" { return "确认删除槽位 '" }
+    "msg_confirm_delete_tail" { return "' 吗？" }
+    "log_tip" { return "提示：先安装，再登录，再保存账号槽位。" }
+    default { return $k }
+  }
+}
+
+function Update-ActiveSlotLabel() {
+  if ([string]::IsNullOrWhiteSpace($script:activeSlotName)) {
+    $lblActiveSlot.Text = T "active_slot_none"
+  } else {
+    $lblActiveSlot.Text = (T "active_slot") + " " + $script:activeSlotName
+  }
+}
+
+function Apply-Language() {
+  $form.Text = T "form_title"
+  $title.Text = T "title"
+  $subTitle.Text = T "subtitle"
+  $groupInstall.Text = T "group_install"
+  $cbCodex.Text = T "install_codex"
+  $cbClaude.Text = T "install_claude"
+  $cbMirror.Text = T "use_mirror"
+  $btnInstall.Text = T "btn_install"
+  $btnVerify.Text = T "btn_verify"
+  $btnOpenFolder.Text = T "btn_open_folder"
+  $groupLogin.Text = T "group_login"
+  $btnCodexLogin.Text = T "btn_login_codex"
+  $btnClaudeLogin.Text = T "btn_login_claude"
+  $btnOpenShell.Text = T "btn_open_shell"
+  $btnAuthStatus.Text = T "btn_check_login"
+  $lblSlots.Text = T "label_slots"
+  $btnRefreshSlots.Text = T "btn_refresh_slots"
+  $btnActivateSlot.Text = T "btn_activate_slot"
+  $btnDeleteSlot.Text = T "btn_delete_slot"
+  $lblNewSlot.Text = T "label_save_as"
+  $btnSaveSlot.Text = T "btn_save_slot"
+  $groupStart.Text = T "group_start"
+  $lblServer.Text = T "label_server"
+  $lblToken.Text = T "label_token"
+  $btnStartRunner.Text = T "btn_start_runner"
+  $groupLog.Text = T "group_logs"
+  if ($status.Text -eq "Ready" -or $status.Text -eq "就绪") {
+    $status.Text = T "ready"
+  }
+  Update-ActiveSlotLabel
+  if ($script:lang -eq "zh") {
+    $btnLanguage.Text = "EN"
+  } else {
+    $btnLanguage.Text = "中文"
+  }
+}
 
 function Add-Log([string]$message) {
   if ([string]::IsNullOrWhiteSpace($message)) { return }
@@ -240,13 +381,13 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   if ($busy) {
     $status.Text = $text
   } else {
-    $status.Text = "Ready"
+    $status.Text = T "ready"
   }
 }
 
 function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [string[]]$arguments) {
   if ($script:activeJob -and $script:activeJob.State -eq "Running") {
-    [System.Windows.Forms.MessageBox]::Show("A task is already running. Please wait.", "Busy")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_busy"), (T "ready"))
     return
   }
   Add-Log("Start: $displayName")
@@ -296,11 +437,8 @@ function Refresh-SlotList([string]$preferSlot = "") {
       [void]$cbSlots.Items.Add($name)
     }
     $active = [string]$result.activeSlot
-    if ([string]::IsNullOrWhiteSpace($active)) {
-      $lblActiveSlot.Text = "Active Slot: (none)"
-    } else {
-      $lblActiveSlot.Text = "Active Slot: $active"
-    }
+    $script:activeSlotName = $active
+    Update-ActiveSlotLabel
 
     $selected = ""
     if (-not [string]::IsNullOrWhiteSpace($preferSlot) -and $names -contains $preferSlot) {
@@ -372,7 +510,7 @@ $btnInstall.Add_Click({
   } elseif ($cbClaude.Checked) {
     $args += "-InstallClaude"
   } else {
-    [System.Windows.Forms.MessageBox]::Show("Select at least one CLI (Codex or Claude).", "Invalid Option")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_select_cli"), (T "group_install"))
     return
   }
   if ($cbMirror.Checked) {
@@ -396,7 +534,7 @@ $btnRefreshSlots.Add_Click({
 $btnSaveSlot.Add_Click({
   $slotName = $tbNewSlot.Text.Trim()
   if ([string]::IsNullOrWhiteSpace($slotName)) {
-    [System.Windows.Forms.MessageBox]::Show("Please enter a slot name.", "Slot Required")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_slot_required"), (T "group_login"))
     return
   }
   try {
@@ -415,7 +553,7 @@ $btnSaveSlot.Add_Click({
 
 $btnActivateSlot.Add_Click({
   if ($cbSlots.SelectedItem -eq $null) {
-    [System.Windows.Forms.MessageBox]::Show("Please select a slot to activate.", "No Slot Selected")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_no_slot_activate"), (T "group_login"))
     return
   }
   $slotName = [string]$cbSlots.SelectedItem
@@ -432,13 +570,13 @@ $btnActivateSlot.Add_Click({
 
 $btnDeleteSlot.Add_Click({
   if ($cbSlots.SelectedItem -eq $null) {
-    [System.Windows.Forms.MessageBox]::Show("Please select a slot to delete.", "No Slot Selected")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_no_slot_delete"), (T "group_login"))
     return
   }
   $slotName = [string]$cbSlots.SelectedItem
   $confirm = [System.Windows.Forms.MessageBox]::Show(
-    "Delete slot '$slotName' ?",
-    "Confirm Delete",
+    ((T "msg_confirm_delete") + $slotName + (T "msg_confirm_delete_tail")),
+    (T "btn_delete_slot"),
     [System.Windows.Forms.MessageBoxButtons]::YesNo,
     [System.Windows.Forms.MessageBoxIcon]::Warning
   )
@@ -481,7 +619,7 @@ $btnStartRunner.Add_Click({
   $token = $tbToken.Text.Trim()
   $server = $tbServer.Text.Trim()
   if ([string]::IsNullOrWhiteSpace($token)) {
-    [System.Windows.Forms.MessageBox]::Show("Please input RUNNER_TOKEN first.", "Token Required")
+    [System.Windows.Forms.MessageBox]::Show((T "msg_token_required"), (T "group_start"))
     return
   }
   if ([string]::IsNullOrWhiteSpace($server)) {
@@ -489,6 +627,15 @@ $btnStartRunner.Add_Click({
   }
   Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$startScript,"-Server",$server,"-Token",$token) -WorkingDirectory $runnerRoot | Out-Null
   Add-Log("Opened terminal: start runner")
+})
+
+$btnLanguage.Add_Click({
+  if ($script:lang -eq "zh") {
+    $script:lang = "en"
+  } else {
+    $script:lang = "zh"
+  }
+  Apply-Language
 })
 
 $form.Add_FormClosed({
@@ -500,6 +647,7 @@ $form.Add_FormClosed({
 })
 
 Add-Log("Runner root: $runnerRoot")
-Add-Log("Tip: install first, login, then save account slot.")
+Apply-Language
+Add-Log((T "log_tip"))
 Refresh-SlotList ""
 [void]$form.ShowDialog()

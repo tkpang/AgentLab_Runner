@@ -1,5 +1,4 @@
 param(
-  [ValidateSet("list", "save", "activate", "delete", "show-active")]
   [string]$Action = "list",
   [string]$Slot = "",
   [switch]$Json
@@ -37,6 +36,22 @@ function Normalize-SlotName([string]$name) {
     throw "Slot name contains invalid characters: \\/:*?""<>|"
   }
   return $v
+}
+
+function Normalize-Action([string]$actionName) {
+  if ($null -eq $actionName) { return "list" }
+  $v = $actionName.Trim().ToLowerInvariant()
+  if ([string]::IsNullOrWhiteSpace($v)) { return "list" }
+  switch ($v) {
+    "list" { return "list" }
+    "save" { return "save" }
+    "activate" { return "activate" }
+    "delete" { return "delete" }
+    "show-active" { return "show-active" }
+    default {
+      throw "Unsupported action: $actionName (allowed: list/save/activate/delete/show-active)"
+    }
+  }
 }
 
 function Ensure-Dir([string]$path) {
@@ -261,6 +276,7 @@ function List-Slots() {
 }
 
 try {
+  $Action = Normalize-Action $Action
   Ensure-Dir $accountsRoot
   switch ($Action) {
     "list" {

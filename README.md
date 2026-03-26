@@ -74,6 +74,7 @@ GUI 安装器支持：
 - 一键检查登录状态（`Check Login Status`）
 - 多账号槽位：`Save Slot / Activate Slot / Delete Slot`
 - 填写 Server/Token 后一键启动 runner
+- 默认中文界面，可一键切换英文
 
 账号槽位说明：
 - 槽位数据保存在 `runner/.accounts/windows/<slot>/`
