@@ -62,20 +62,31 @@ RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash runner/scripts/st
 - Codex CLI 安装后请自行完成登录认证（例如运行 `codex login`）。
 - Claude Code CLI 安装后请自行完成登录认证（例如运行 `claude login` 或配置对应 API 凭证）。
 
-## 作为独立仓库维护（子仓库）
+## 作为独立仓库维护（Git Submodule）
 
-推荐用 `git subtree` 维护 `runner/`，方便主仓与 runner 仓分离：
+`runner/` 本身是独立 Git 仓库，主仓库只通过 submodule 挂载它。
+
+在主仓库中常用命令：
 
 ```bash
-# 在主仓执行，产出 runner-only 分支
-git subtree split --prefix runner -b runner-release
+# 初始化/更新 submodule
+git submodule update --init --recursive
 
-# 推送到 runner 独立仓库
-git push <runner-remote> runner-release:main --force
+# 查看 runner 子模块状态
+git submodule status runner
 ```
 
-也可使用项目内脚本：
+更新 runner 代码的推荐方式：
 
 ```bash
-bash ../scripts/runner/split-runner-subrepo.sh <runner-remote>
+# 进入 runner 子仓库开发
+cd runner
+git checkout -b feat/xxx
+# ...修改并提交...
+git push origin HEAD
+
+# 回到主仓库，提交 submodule 指针
+cd ..
+git add runner .gitmodules
+git commit -m "chore: bump runner submodule"
 ```
