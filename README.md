@@ -41,6 +41,12 @@ Windows（双击方式，不闪退，推荐给非命令行用户）:
 scripts\setup-windows.cmd
 ```
 
+Windows（图形化安装器，推荐给小白用户）:
+
+```bat
+scripts\setup-windows-gui.cmd
+```
+
 2. 启动 runner
 
 Linux/Ubuntu:
@@ -60,6 +66,12 @@ Windows（双击方式）:
 ```bat
 scripts\start-runner.cmd
 ```
+
+GUI 安装器支持：
+- 勾选安装 Codex / Claude
+- 勾选中国镜像加速
+- 一键打开 `codex login` / `claude login`
+- 填写 Server/Token 后一键启动 runner
 
 说明：
 - `setup-*` 脚本会自动安装 runner 依赖（`npm install`），不需要再手工执行。
