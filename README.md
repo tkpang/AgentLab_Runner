@@ -72,10 +72,11 @@ GUI 安装器支持：
 - 勾选中国镜像加速
 - 一键打开 `codex login` / `claude login`
 - 一键检查登录状态（`Check Login Status`）
+- 启动后自动检测 Node / Codex / Claude，顶部显示红绿状态灯（可悬浮看路径）
 - 多账号槽位：`Save Slot / Activate Slot / Delete Slot`
 - 余量查询：刷新后展示当前账号 5h / 7d 剩余额度（进度条 + 百分比）
 - 填写 Server/Token 后一键启动 runner
-- 默认中文界面，可一键切换英文
+- 默认中文界面，可一键切换英文；日志提示也会跟随语言切换
 
 说明：当前“余量查询”基于 Codex app-server 的 `account/rateLimits/read` 接口实现。
 

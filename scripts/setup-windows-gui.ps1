@@ -13,9 +13,11 @@ $quotaScript = Join-Path $scriptDir "quota-status-windows.ps1"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "AgentLab Runner Setup (Windows)"
-$form.Size = New-Object System.Drawing.Size(920, 920)
+$form.Size = New-Object System.Drawing.Size(960, 940)
 $form.StartPosition = "CenterScreen"
-$form.MinimumSize = New-Object System.Drawing.Size(920, 920)
+$form.MinimumSize = New-Object System.Drawing.Size(960, 940)
+$form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
+$form.Font = New-Object System.Drawing.Font("Segoe UI", 10)
 
 $title = New-Object System.Windows.Forms.Label
 $title.Text = "AgentLab Runner - One-click Setup"
@@ -32,33 +34,35 @@ $form.Controls.Add($subTitle)
 
 $btnLanguage = New-Object System.Windows.Forms.Button
 $btnLanguage.Text = "EN"
-$btnLanguage.Location = New-Object System.Drawing.Point(810, 16)
+$btnLanguage.Location = New-Object System.Drawing.Point(850, 16)
 $btnLanguage.Size = New-Object System.Drawing.Size(70, 30)
 $form.Controls.Add($btnLanguage)
 
 $groupInstall = New-Object System.Windows.Forms.GroupBox
 $groupInstall.Text = "1) Install / Repair Environment"
 $groupInstall.Location = New-Object System.Drawing.Point(20, 80)
-$groupInstall.Size = New-Object System.Drawing.Size(860, 130)
+$groupInstall.Size = New-Object System.Drawing.Size(900, 140)
 $form.Controls.Add($groupInstall)
 
 $cbCodex = New-Object System.Windows.Forms.CheckBox
 $cbCodex.Text = "Install Codex"
 $cbCodex.Checked = $true
+$cbCodex.AutoSize = $true
 $cbCodex.Location = New-Object System.Drawing.Point(18, 32)
 $groupInstall.Controls.Add($cbCodex)
 
 $cbClaude = New-Object System.Windows.Forms.CheckBox
 $cbClaude.Text = "Install Claude Code"
 $cbClaude.Checked = $true
-$cbClaude.Location = New-Object System.Drawing.Point(150, 32)
+$cbClaude.AutoSize = $true
+$cbClaude.Location = New-Object System.Drawing.Point(170, 32)
 $groupInstall.Controls.Add($cbClaude)
 
 $cbMirror = New-Object System.Windows.Forms.CheckBox
 $cbMirror.Text = "Use China Mirror (faster in CN)"
 $cbMirror.Checked = $true
-$cbMirror.Location = New-Object System.Drawing.Point(18, 58)
 $cbMirror.AutoSize = $true
+$cbMirror.Location = New-Object System.Drawing.Point(18, 58)
 $groupInstall.Controls.Add($cbMirror)
 
 $btnInstall = New-Object System.Windows.Forms.Button
@@ -79,10 +83,34 @@ $btnOpenFolder.Location = New-Object System.Drawing.Point(268, 86)
 $btnOpenFolder.Size = New-Object System.Drawing.Size(150, 28)
 $groupInstall.Controls.Add($btnOpenFolder)
 
+$lblEnvNode = New-Object System.Windows.Forms.Label
+$lblEnvNode.Text = "Node: -"
+$lblEnvNode.Location = New-Object System.Drawing.Point(440, 32)
+$lblEnvNode.Size = New-Object System.Drawing.Size(130, 24)
+$lblEnvNode.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblEnvNode.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$groupInstall.Controls.Add($lblEnvNode)
+
+$lblEnvCodex = New-Object System.Windows.Forms.Label
+$lblEnvCodex.Text = "Codex: -"
+$lblEnvCodex.Location = New-Object System.Drawing.Point(580, 32)
+$lblEnvCodex.Size = New-Object System.Drawing.Size(130, 24)
+$lblEnvCodex.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblEnvCodex.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$groupInstall.Controls.Add($lblEnvCodex)
+
+$lblEnvClaude = New-Object System.Windows.Forms.Label
+$lblEnvClaude.Text = "Claude: -"
+$lblEnvClaude.Location = New-Object System.Drawing.Point(720, 32)
+$lblEnvClaude.Size = New-Object System.Drawing.Size(150, 24)
+$lblEnvClaude.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblEnvClaude.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$groupInstall.Controls.Add($lblEnvClaude)
+
 $groupLogin = New-Object System.Windows.Forms.GroupBox
 $groupLogin.Text = "2) Login + Multi-Account Slots"
-$groupLogin.Location = New-Object System.Drawing.Point(20, 220)
-$groupLogin.Size = New-Object System.Drawing.Size(860, 170)
+$groupLogin.Location = New-Object System.Drawing.Point(20, 230)
+$groupLogin.Size = New-Object System.Drawing.Size(900, 170)
 $form.Controls.Add($groupLogin)
 
 $btnCodexLogin = New-Object System.Windows.Forms.Button
@@ -117,25 +145,25 @@ $groupLogin.Controls.Add($lblSlots)
 
 $cbSlots = New-Object System.Windows.Forms.ComboBox
 $cbSlots.DropDownStyle = "DropDownList"
-$cbSlots.Location = New-Object System.Drawing.Point(108, 74)
+$cbSlots.Location = New-Object System.Drawing.Point(122, 74)
 $cbSlots.Size = New-Object System.Drawing.Size(220, 23)
 $groupLogin.Controls.Add($cbSlots)
 
 $btnRefreshSlots = New-Object System.Windows.Forms.Button
 $btnRefreshSlots.Text = "Refresh Slots"
-$btnRefreshSlots.Location = New-Object System.Drawing.Point(338, 72)
+$btnRefreshSlots.Location = New-Object System.Drawing.Point(352, 72)
 $btnRefreshSlots.Size = New-Object System.Drawing.Size(100, 26)
 $groupLogin.Controls.Add($btnRefreshSlots)
 
 $btnActivateSlot = New-Object System.Windows.Forms.Button
 $btnActivateSlot.Text = "Activate Slot"
-$btnActivateSlot.Location = New-Object System.Drawing.Point(448, 72)
+$btnActivateSlot.Location = New-Object System.Drawing.Point(462, 72)
 $btnActivateSlot.Size = New-Object System.Drawing.Size(100, 26)
 $groupLogin.Controls.Add($btnActivateSlot)
 
 $btnDeleteSlot = New-Object System.Windows.Forms.Button
 $btnDeleteSlot.Text = "Delete Slot"
-$btnDeleteSlot.Location = New-Object System.Drawing.Point(558, 72)
+$btnDeleteSlot.Location = New-Object System.Drawing.Point(572, 72)
 $btnDeleteSlot.Size = New-Object System.Drawing.Size(100, 26)
 $groupLogin.Controls.Add($btnDeleteSlot)
 
@@ -146,27 +174,27 @@ $lblNewSlot.AutoSize = $true
 $groupLogin.Controls.Add($lblNewSlot)
 
 $tbNewSlot = New-Object System.Windows.Forms.TextBox
-$tbNewSlot.Location = New-Object System.Drawing.Point(108, 109)
-$tbNewSlot.Size = New-Object System.Drawing.Size(220, 23)
+$tbNewSlot.Location = New-Object System.Drawing.Point(140, 109)
+$tbNewSlot.Size = New-Object System.Drawing.Size(200, 23)
 $tbNewSlot.Text = "account-1"
 $groupLogin.Controls.Add($tbNewSlot)
 
 $btnSaveSlot = New-Object System.Windows.Forms.Button
 $btnSaveSlot.Text = "Save Slot"
-$btnSaveSlot.Location = New-Object System.Drawing.Point(338, 107)
+$btnSaveSlot.Location = New-Object System.Drawing.Point(352, 107)
 $btnSaveSlot.Size = New-Object System.Drawing.Size(100, 26)
 $groupLogin.Controls.Add($btnSaveSlot)
 
 $lblActiveSlot = New-Object System.Windows.Forms.Label
 $lblActiveSlot.Text = "Active Slot: (none)"
-$lblActiveSlot.Location = New-Object System.Drawing.Point(448, 112)
+$lblActiveSlot.Location = New-Object System.Drawing.Point(462, 112)
 $lblActiveSlot.AutoSize = $true
 $groupLogin.Controls.Add($lblActiveSlot)
 
 $groupStart = New-Object System.Windows.Forms.GroupBox
 $groupStart.Text = "3) Start Runner"
-$groupStart.Location = New-Object System.Drawing.Point(20, 400)
-$groupStart.Size = New-Object System.Drawing.Size(860, 120)
+$groupStart.Location = New-Object System.Drawing.Point(20, 410)
+$groupStart.Size = New-Object System.Drawing.Size(900, 120)
 $form.Controls.Add($groupStart)
 
 $lblServer = New-Object System.Windows.Forms.Label
@@ -200,8 +228,8 @@ $groupStart.Controls.Add($btnStartRunner)
 
 $groupQuota = New-Object System.Windows.Forms.GroupBox
 $groupQuota.Text = "4) Quota"
-$groupQuota.Location = New-Object System.Drawing.Point(20, 530)
-$groupQuota.Size = New-Object System.Drawing.Size(860, 130)
+$groupQuota.Location = New-Object System.Drawing.Point(20, 540)
+$groupQuota.Size = New-Object System.Drawing.Size(900, 130)
 $form.Controls.Add($groupQuota)
 
 $lblQuotaAccount = New-Object System.Windows.Forms.Label
@@ -224,7 +252,7 @@ $groupQuota.Controls.Add($lblQuotaRefreshed)
 
 $btnQuotaRefresh = New-Object System.Windows.Forms.Button
 $btnQuotaRefresh.Text = "刷新余量"
-$btnQuotaRefresh.Location = New-Object System.Drawing.Point(700, 24)
+$btnQuotaRefresh.Location = New-Object System.Drawing.Point(740, 24)
 $btnQuotaRefresh.Size = New-Object System.Drawing.Size(130, 26)
 $groupQuota.Controls.Add($btnQuotaRefresh)
 
@@ -236,7 +264,7 @@ $groupQuota.Controls.Add($lblQuota5h)
 
 $pbQuota5h = New-Object System.Windows.Forms.ProgressBar
 $pbQuota5h.Location = New-Object System.Drawing.Point(200, 74)
-$pbQuota5h.Size = New-Object System.Drawing.Size(520, 18)
+$pbQuota5h.Size = New-Object System.Drawing.Size(560, 18)
 $pbQuota5h.Minimum = 0
 $pbQuota5h.Maximum = 100
 $pbQuota5h.Value = 0
@@ -244,7 +272,7 @@ $groupQuota.Controls.Add($pbQuota5h)
 
 $lblQuota5hPercent = New-Object System.Windows.Forms.Label
 $lblQuota5hPercent.Text = "0%"
-$lblQuota5hPercent.Location = New-Object System.Drawing.Point(730, 74)
+$lblQuota5hPercent.Location = New-Object System.Drawing.Point(770, 74)
 $lblQuota5hPercent.Size = New-Object System.Drawing.Size(100, 20)
 $groupQuota.Controls.Add($lblQuota5hPercent)
 
@@ -256,7 +284,7 @@ $groupQuota.Controls.Add($lblQuota7d)
 
 $pbQuota7d = New-Object System.Windows.Forms.ProgressBar
 $pbQuota7d.Location = New-Object System.Drawing.Point(200, 100)
-$pbQuota7d.Size = New-Object System.Drawing.Size(520, 18)
+$pbQuota7d.Size = New-Object System.Drawing.Size(560, 18)
 $pbQuota7d.Minimum = 0
 $pbQuota7d.Maximum = 100
 $pbQuota7d.Value = 0
@@ -264,14 +292,14 @@ $groupQuota.Controls.Add($pbQuota7d)
 
 $lblQuota7dPercent = New-Object System.Windows.Forms.Label
 $lblQuota7dPercent.Text = "0%"
-$lblQuota7dPercent.Location = New-Object System.Drawing.Point(730, 100)
+$lblQuota7dPercent.Location = New-Object System.Drawing.Point(770, 100)
 $lblQuota7dPercent.Size = New-Object System.Drawing.Size(100, 20)
 $groupQuota.Controls.Add($lblQuota7dPercent)
 
 $groupLog = New-Object System.Windows.Forms.GroupBox
 $groupLog.Text = "Logs"
-$groupLog.Location = New-Object System.Drawing.Point(20, 670)
-$groupLog.Size = New-Object System.Drawing.Size(860, 180)
+$groupLog.Location = New-Object System.Drawing.Point(20, 680)
+$groupLog.Size = New-Object System.Drawing.Size(900, 180)
 $form.Controls.Add($groupLog)
 
 $tbLog = New-Object System.Windows.Forms.TextBox
@@ -280,14 +308,19 @@ $tbLog.ReadOnly = $true
 $tbLog.ScrollBars = "Vertical"
 $tbLog.Font = New-Object System.Drawing.Font("Consolas", 9)
 $tbLog.Location = New-Object System.Drawing.Point(16, 24)
-$tbLog.Size = New-Object System.Drawing.Size(828, 140)
+$tbLog.Size = New-Object System.Drawing.Size(868, 140)
 $groupLog.Controls.Add($tbLog)
 
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready"
 $status.AutoSize = $true
-$status.Location = New-Object System.Drawing.Point(22, 862)
+$status.Location = New-Object System.Drawing.Point(22, 882)
 $form.Controls.Add($status)
+
+$toolTip = New-Object System.Windows.Forms.ToolTip
+$toolTip.AutoPopDelay = 15000
+$toolTip.InitialDelay = 300
+$toolTip.ReshowDelay = 100
 
 $script:activeJob = $null
 $timer = New-Object System.Windows.Forms.Timer
@@ -295,6 +328,8 @@ $timer.Interval = 350
 $script:lang = "zh"
 $script:activeSlotName = ""
 $script:quotaState = $null
+$script:envState = @{ node = $false; codex = $false; claude = $false }
+$script:envPaths = @{ node = ""; codex = ""; claude = "" }
 
 function T([string]$k) {
   if ($script:lang -eq "en") {
@@ -328,6 +363,11 @@ function T([string]$k) {
       "btn_start_runner" { return "Start Runner" }
       "group_quota" { return "4) Quota" }
       "btn_quota_refresh" { return "Refresh Quota" }
+      "env_node" { return "Node" }
+      "env_codex" { return "Codex" }
+      "env_claude" { return "Claude" }
+      "env_ok" { return "Ready" }
+      "env_bad" { return "Missing" }
       "quota_account" { return "Account:" }
       "quota_plan" { return "Plan:" }
       "quota_refreshed" { return "Refreshed:" }
@@ -339,6 +379,9 @@ function T([string]$k) {
       "quota_reset" { return "reset" }
       "group_logs" { return "Logs" }
       "ready" { return "Ready" }
+      "task_install_env" { return "Installing environment..." }
+      "task_verify_env" { return "Verifying environment..." }
+      "task_check_login" { return "Checking login status..." }
       "msg_busy" { return "A task is already running. Please wait." }
       "msg_select_cli" { return "Select at least one CLI (Codex or Claude)." }
       "msg_slot_required" { return "Please enter a slot name." }
@@ -347,7 +390,29 @@ function T([string]$k) {
       "msg_token_required" { return "Please input RUNNER_TOKEN first." }
       "msg_confirm_delete" { return "Delete slot '" }
       "msg_confirm_delete_tail" { return "' ?" }
+      "title_save_slot_failed" { return "Save Slot Failed" }
+      "title_activate_slot_failed" { return "Activate Slot Failed" }
+      "title_delete_slot_failed" { return "Delete Slot Failed" }
       "log_tip" { return "Tip: install first, login, then save account slot." }
+      "log_start" { return "Start: {0}" }
+      "log_done_exit" { return "Done (exit code {0})." }
+      "log_failed_exit" { return "Failed (exit code {0})." }
+      "log_slot_list_refreshed" { return "Slot list refreshed. total={0}, active={1}" }
+      "log_slot_refresh_failed" { return "Failed to refresh slots: {0}" }
+      "log_quota_refreshed" { return "Quota refreshed: 5h={0}% 7d={1}%" }
+      "log_quota_refresh_failed" { return "Quota refresh failed: {0}" }
+      "log_saved_slot" { return "Saved slot '{0}' with {1} credential file(s)." }
+      "log_warning" { return "Warning: {0}" }
+      "log_save_slot_failed" { return "Save slot failed: {0}" }
+      "log_activated_slot" { return "Activated slot '{0}', restored {1} file(s)." }
+      "log_activate_slot_failed" { return "Activate slot failed: {0}" }
+      "log_deleted_slot" { return "Deleted slot '{0}'." }
+      "log_slot_not_found" { return "Slot '{0}' not found." }
+      "log_delete_slot_failed" { return "Delete slot failed: {0}" }
+      "log_opened_terminal" { return "Opened terminal: {0}" }
+      "log_opened_runner_shell" { return "Opened runner shell." }
+      "log_runner_root" { return "Runner root: {0}" }
+      "log_env_summary" { return "Environment: Node={0}, Codex={1}, Claude={2}" }
       default { return $k }
     }
   }
@@ -381,6 +446,11 @@ function T([string]$k) {
     "btn_start_runner" { return "启动 Runner" }
     "group_quota" { return "4) 额度余量" }
     "btn_quota_refresh" { return "刷新余量" }
+    "env_node" { return "Node" }
+    "env_codex" { return "Codex" }
+    "env_claude" { return "Claude" }
+    "env_ok" { return "可用" }
+    "env_bad" { return "缺失" }
     "quota_account" { return "当前账号：" }
     "quota_plan" { return "套餐：" }
     "quota_refreshed" { return "刷新时间：" }
@@ -392,6 +462,9 @@ function T([string]$k) {
     "quota_reset" { return "重置" }
     "group_logs" { return "日志" }
     "ready" { return "就绪" }
+    "task_install_env" { return "正在安装环境..." }
+    "task_verify_env" { return "正在检测环境..." }
+    "task_check_login" { return "正在检查登录状态..." }
     "msg_busy" { return "已有任务在执行，请稍候。" }
     "msg_select_cli" { return "请至少勾选一个 CLI（Codex 或 Claude）。" }
     "msg_slot_required" { return "请输入槽位名称。" }
@@ -400,8 +473,97 @@ function T([string]$k) {
     "msg_token_required" { return "请先填写 RUNNER_TOKEN。" }
     "msg_confirm_delete" { return "确认删除槽位 '" }
     "msg_confirm_delete_tail" { return "' 吗？" }
+    "title_save_slot_failed" { return "保存槽位失败" }
+    "title_activate_slot_failed" { return "启用槽位失败" }
+    "title_delete_slot_failed" { return "删除槽位失败" }
     "log_tip" { return "提示：先安装，再登录，再保存账号槽位。" }
+    "log_start" { return "开始：{0}" }
+    "log_done_exit" { return "完成（退出码 {0}）。" }
+    "log_failed_exit" { return "失败（退出码 {0}）。" }
+    "log_slot_list_refreshed" { return "槽位已刷新：总数={0}，当前={1}" }
+    "log_slot_refresh_failed" { return "刷新槽位失败：{0}" }
+    "log_quota_refreshed" { return "额度已刷新：5h={0}% 7d={1}%" }
+    "log_quota_refresh_failed" { return "额度刷新失败：{0}" }
+    "log_saved_slot" { return "已保存槽位 '{0}'，写入凭证文件 {1} 个。" }
+    "log_warning" { return "警告：{0}" }
+    "log_save_slot_failed" { return "保存槽位失败：{0}" }
+    "log_activated_slot" { return "已启用槽位 '{0}'，恢复文件 {1} 个。" }
+    "log_activate_slot_failed" { return "启用槽位失败：{0}" }
+    "log_deleted_slot" { return "已删除槽位 '{0}'。" }
+    "log_slot_not_found" { return "槽位 '{0}' 不存在。" }
+    "log_delete_slot_failed" { return "删除槽位失败：{0}" }
+    "log_opened_terminal" { return "已打开终端：{0}" }
+    "log_opened_runner_shell" { return "已打开 Runner 终端。" }
+    "log_runner_root" { return "Runner 根目录：{0}" }
+    "log_env_summary" { return "环境状态：Node={0}，Codex={1}，Claude={2}" }
     default { return $k }
+  }
+}
+
+function LT([string]$key, [object[]]$args = @()) {
+  $template = [string](T $key)
+  if ($args -ne $null -and $args.Count -gt 0) {
+    return [string]::Format($template, $args)
+  }
+  return $template
+}
+
+function Resolve-ToolPath([string]$tool, [string[]]$candidatePaths) {
+  foreach ($p in $candidatePaths) {
+    if (-not [string]::IsNullOrWhiteSpace($p) -and (Test-Path $p)) {
+      return $p
+    }
+  }
+  try {
+    $cmd = Get-Command $tool -ErrorAction Stop
+    if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
+    if ($cmd -and $cmd.Path) { return [string]$cmd.Path }
+  } catch {}
+  return ""
+}
+
+function Set-EnvBadge([System.Windows.Forms.Label]$label, [string]$nameKey, [bool]$ok, [string]$path = "") {
+  $label.Text = (T $nameKey) + ": " + $(if ($ok) { T "env_ok" } else { T "env_bad" })
+  if ($ok) {
+    $label.BackColor = [System.Drawing.Color]::FromArgb(22, 101, 52)
+    $label.ForeColor = [System.Drawing.Color]::White
+  } else {
+    $label.BackColor = [System.Drawing.Color]::FromArgb(127, 29, 29)
+    $label.ForeColor = [System.Drawing.Color]::White
+  }
+  $tip = if ([string]::IsNullOrWhiteSpace($path)) { T "env_bad" } else { $path }
+  $toolTip.SetToolTip($label, $tip)
+}
+
+function Update-EnvironmentBadges() {
+  Set-EnvBadge $lblEnvNode "env_node" $script:envState.node $script:envPaths.node
+  Set-EnvBadge $lblEnvCodex "env_codex" $script:envState.codex $script:envPaths.codex
+  Set-EnvBadge $lblEnvClaude "env_claude" $script:envState.claude $script:envPaths.claude
+}
+
+function Refresh-EnvironmentIndicators([bool]$writeLog = $false) {
+  $script:envPaths.node = Resolve-ToolPath "node" @(
+    (Join-Path $runnerRoot ".runtime/node/current/node.exe")
+    (Join-Path $runnerRoot ".runtime/node/current/node")
+  )
+  $script:envPaths.codex = Resolve-ToolPath "codex" @(
+    (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/codex.cmd")
+    (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/codex")
+  )
+  $script:envPaths.claude = Resolve-ToolPath "claude" @(
+    (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/claude.cmd")
+    (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/claude")
+  )
+  $script:envState.node = -not [string]::IsNullOrWhiteSpace($script:envPaths.node)
+  $script:envState.codex = -not [string]::IsNullOrWhiteSpace($script:envPaths.codex)
+  $script:envState.claude = -not [string]::IsNullOrWhiteSpace($script:envPaths.claude)
+  Update-EnvironmentBadges
+  if ($writeLog) {
+    Add-Log (LT "log_env_summary" @(
+      $(if ($script:envState.node) { T "env_ok" } else { T "env_bad" }),
+      $(if ($script:envState.codex) { T "env_ok" } else { T "env_bad" }),
+      $(if ($script:envState.claude) { T "env_ok" } else { T "env_bad" })
+    ))
   }
 }
 
@@ -504,6 +666,7 @@ function Apply-Language() {
     $status.Text = T "ready"
   }
   Update-ActiveSlotLabel
+  Update-EnvironmentBadges
   if ($null -ne $script:quotaState) {
     Apply-QuotaData $script:quotaState
   }
@@ -551,7 +714,7 @@ function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [stri
     [System.Windows.Forms.MessageBox]::Show((T "msg_busy"), (T "ready"))
     return
   }
-  Add-Log("Start: $displayName")
+  Add-Log (LT "log_start" @($displayName))
   Set-Busy $true $displayName
 
   $script:activeJob = Start-Job -ScriptBlock {
@@ -572,13 +735,34 @@ function Invoke-SlotActionJson([string]$action, [string]$slot) {
   }
   $raw = & $accountSlotsScript @args 2>&1 | Out-String
   if ([string]::IsNullOrWhiteSpace($raw)) {
+    # Fallback: explicitly invoke by powershell -File to avoid invocation-policy edge cases.
+    $fallbackArgs = @("-NoProfile","-ExecutionPolicy","Bypass","-File",$accountSlotsScript) + $args
+    $raw = & powershell @fallbackArgs 2>&1 | Out-String
+  }
+  if ([string]::IsNullOrWhiteSpace($raw)) {
     throw "Empty response from account slot script."
   }
+  $jsonText = ""
+  $trimmedRaw = $raw.Trim()
+  if ($trimmedRaw.StartsWith("{") -or $trimmedRaw.StartsWith("[")) {
+    $jsonText = $trimmedRaw
+  } else {
+    $jsonLine = ($raw -split "`r?`n" | Where-Object {
+      $t = $_.Trim()
+      $t.StartsWith("{") -or $t.StartsWith("[")
+    } | Select-Object -Last 1)
+    if (-not [string]::IsNullOrWhiteSpace($jsonLine)) {
+      $jsonText = $jsonLine.Trim()
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($jsonText)) {
+    throw ("Invalid JSON response: " + $raw)
+  }
   try {
-    $obj = $raw | ConvertFrom-Json
+    $obj = $jsonText | ConvertFrom-Json
   }
   catch {
-    throw ("Invalid JSON response: " + $raw)
+    throw ("Invalid JSON response: " + $jsonText)
   }
   if (-not $obj.ok) {
     $err = if ($obj.error) { [string]$obj.error } else { "unknown error" }
@@ -613,10 +797,10 @@ function Refresh-SlotList([string]$preferSlot = "") {
       $cbSlots.SelectedItem = $selected
     }
 
-    Add-Log("Slot list refreshed. total=$($names.Count), active=$active")
+    Add-Log (LT "log_slot_list_refreshed" @($names.Count, $active))
   }
   catch {
-    Add-Log("Failed to refresh slots: $($_.Exception.Message)")
+    Add-Log (LT "log_slot_refresh_failed" @($_.Exception.Message))
   }
 }
 
@@ -630,15 +814,15 @@ function Refresh-QuotaStatus() {
     $obj = $raw | ConvertFrom-Json -Depth 10
     Apply-QuotaData $obj
     if ($obj.ok) {
-      Add-Log("Quota refreshed: 5h=$($obj.primary.remainingPercent)% 7d=$($obj.secondary.remainingPercent)%")
+      Add-Log (LT "log_quota_refreshed" @($obj.primary.remainingPercent, $obj.secondary.remainingPercent))
     }
     else {
-      Add-Log("Quota refresh failed: $($obj.error)")
+      Add-Log (LT "log_quota_refresh_failed" @($obj.error))
     }
   }
   catch {
     Set-QuotaUnavailable $_.Exception.Message
-    Add-Log("Quota refresh failed: $($_.Exception.Message)")
+    Add-Log (LT "log_quota_refresh_failed" @($_.Exception.Message))
   }
   finally {
     Set-Busy $false
@@ -656,9 +840,9 @@ $timer.Add_Tick({
     if ($s.StartsWith("__EXIT_CODE__:")) {
       $exitCode = $s.Substring(12)
       if ($exitCode -eq "0") {
-        Add-Log("Done (exit code 0).")
+        Add-Log (LT "log_done_exit" @($exitCode))
       } else {
-        Add-Log("Failed (exit code $exitCode).")
+        Add-Log (LT "log_failed_exit" @($exitCode))
       }
     } else {
       Add-Log($s)
@@ -672,9 +856,9 @@ $timer.Add_Tick({
       if ($s.StartsWith("__EXIT_CODE__:")) {
         $exitCode = $s.Substring(12)
         if ($exitCode -eq "0") {
-          Add-Log("Done (exit code 0).")
+          Add-Log (LT "log_done_exit" @($exitCode))
         } else {
-          Add-Log("Failed (exit code $exitCode).")
+          Add-Log (LT "log_failed_exit" @($exitCode))
         }
       } else {
         Add-Log($s)
@@ -684,6 +868,7 @@ $timer.Add_Tick({
     $script:activeJob = $null
     $timer.Stop()
     Set-Busy $false
+    Refresh-EnvironmentIndicators $false
   }
 })
 
@@ -702,15 +887,15 @@ $btnInstall.Add_Click({
   if ($cbMirror.Checked) {
     $args += "-UseChinaMirror"
   }
-  Start-BackgroundScript "Installing environment..." $setupScript $args
+  Start-BackgroundScript (T "task_install_env") $setupScript $args
 })
 
 $btnVerify.Add_Click({
-  Start-BackgroundScript "Verifying environment..." $verifyScript @()
+  Start-BackgroundScript (T "task_verify_env") $verifyScript @()
 })
 
 $btnAuthStatus.Add_Click({
-  Start-BackgroundScript "Checking login status..." $authStatusScript @()
+  Start-BackgroundScript (T "task_check_login") $authStatusScript @()
 })
 
 $btnRefreshSlots.Add_Click({
@@ -729,15 +914,15 @@ $btnSaveSlot.Add_Click({
   }
   try {
     $res = Invoke-SlotActionJson "save" $slotName
-    Add-Log("Saved slot '$slotName' with $($res.savedCount) credential file(s).")
+    Add-Log (LT "log_saved_slot" @($slotName, $res.savedCount))
     if (-not [string]::IsNullOrWhiteSpace([string]$res.warning)) {
-      Add-Log("Warning: $($res.warning)")
+      Add-Log (LT "log_warning" @($res.warning))
     }
     Refresh-SlotList $slotName
   }
   catch {
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Save Slot Failed")
-    Add-Log("Save slot failed: $($_.Exception.Message)")
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T "title_save_slot_failed"))
+    Add-Log (LT "log_save_slot_failed" @($_.Exception.Message))
   }
 })
 
@@ -749,12 +934,12 @@ $btnActivateSlot.Add_Click({
   $slotName = [string]$cbSlots.SelectedItem
   try {
     $res = Invoke-SlotActionJson "activate" $slotName
-    Add-Log("Activated slot '$slotName', restored $($res.restoredCount) file(s).")
+    Add-Log (LT "log_activated_slot" @($slotName, $res.restoredCount))
     Refresh-SlotList $slotName
   }
   catch {
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Activate Slot Failed")
-    Add-Log("Activate slot failed: $($_.Exception.Message)")
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T "title_activate_slot_failed"))
+    Add-Log (LT "log_activate_slot_failed" @($_.Exception.Message))
   }
 })
 
@@ -774,15 +959,15 @@ $btnDeleteSlot.Add_Click({
   try {
     $res = Invoke-SlotActionJson "delete" $slotName
     if ($res.deleted) {
-      Add-Log("Deleted slot '$slotName'.")
+      Add-Log (LT "log_deleted_slot" @($slotName))
     } else {
-      Add-Log("Slot '$slotName' not found.")
+      Add-Log (LT "log_slot_not_found" @($slotName))
     }
     Refresh-SlotList ""
   }
   catch {
-    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, "Delete Slot Failed")
-    Add-Log("Delete slot failed: $($_.Exception.Message)")
+    [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, (T "title_delete_slot_failed"))
+    Add-Log (LT "log_delete_slot_failed" @($_.Exception.Message))
   }
 })
 
@@ -792,17 +977,17 @@ $btnOpenFolder.Add_Click({
 
 $btnCodexLogin.Add_Click({
   Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$shellScript,"-Command","codex login") -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log("Opened terminal: codex login")
+  Add-Log (LT "log_opened_terminal" @("codex login"))
 })
 
 $btnClaudeLogin.Add_Click({
   Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$shellScript,"-Command","claude login") -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log("Opened terminal: claude login")
+  Add-Log (LT "log_opened_terminal" @("claude login"))
 })
 
 $btnOpenShell.Add_Click({
   Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$shellScript) -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log("Opened runner shell.")
+  Add-Log (T "log_opened_runner_shell")
 })
 
 $btnStartRunner.Add_Click({
@@ -816,7 +1001,7 @@ $btnStartRunner.Add_Click({
     $server = "http://127.0.0.1:3200"
   }
   Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$startScript,"-Server",$server,"-Token",$token) -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log("Opened terminal: start runner")
+  Add-Log (LT "log_opened_terminal" @("start runner"))
 })
 
 $btnLanguage.Add_Click({
@@ -826,6 +1011,11 @@ $btnLanguage.Add_Click({
     $script:lang = "zh"
   }
   Apply-Language
+  Add-Log (LT "log_env_summary" @(
+    $(if ($script:envState.node) { T "env_ok" } else { T "env_bad" }),
+    $(if ($script:envState.codex) { T "env_ok" } else { T "env_bad" }),
+    $(if ($script:envState.claude) { T "env_ok" } else { T "env_bad" })
+  ))
 })
 
 $form.Add_FormClosed({
@@ -836,8 +1026,9 @@ $form.Add_FormClosed({
   }
 })
 
-Add-Log("Runner root: $runnerRoot")
 Apply-Language
+Refresh-EnvironmentIndicators $false
+Add-Log (LT "log_runner_root" @($runnerRoot))
 Add-Log((T "log_tip"))
 Refresh-SlotList ""
 [void]$form.ShowDialog()
