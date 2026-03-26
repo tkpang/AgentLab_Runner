@@ -7,6 +7,7 @@ $setupScript = Join-Path $scriptDir "setup-windows.ps1"
 $startScript = Join-Path $scriptDir "start-runner.ps1"
 $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
+$authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "AgentLab Runner Setup (Windows)"
@@ -94,6 +95,12 @@ $btnOpenShell.Location = New-Object System.Drawing.Point(278, 35)
 $btnOpenShell.Size = New-Object System.Drawing.Size(140, 28)
 $groupLogin.Controls.Add($btnOpenShell)
 
+$btnAuthStatus = New-Object System.Windows.Forms.Button
+$btnAuthStatus.Text = "Check Login Status"
+$btnAuthStatus.Location = New-Object System.Drawing.Point(428, 35)
+$btnAuthStatus.Size = New-Object System.Drawing.Size(150, 28)
+$groupLogin.Controls.Add($btnAuthStatus)
+
 $groupStart = New-Object System.Windows.Forms.GroupBox
 $groupStart.Text = "3) Start Runner"
 $groupStart.Location = New-Object System.Drawing.Point(20, 320)
@@ -165,6 +172,7 @@ function Add-Log([string]$message) {
 function Set-Busy([bool]$busy, [string]$text = "") {
   $btnInstall.Enabled = -not $busy
   $btnVerify.Enabled = -not $busy
+  $btnAuthStatus.Enabled = -not $busy
   $cbCodex.Enabled = -not $busy
   $cbClaude.Enabled = -not $busy
   $cbMirror.Enabled = -not $busy
@@ -256,6 +264,10 @@ $btnInstall.Add_Click({
 
 $btnVerify.Add_Click({
   Start-BackgroundScript "Verifying environment..." $verifyScript @()
+})
+
+$btnAuthStatus.Add_Click({
+  Start-BackgroundScript "Checking login status..." $authStatusScript @()
 })
 
 $btnOpenFolder.Add_Click({

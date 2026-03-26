@@ -71,6 +71,7 @@ GUI 安装器支持：
 - 勾选安装 Codex / Claude
 - 勾选中国镜像加速
 - 一键打开 `codex login` / `claude login`
+- 一键检查登录状态（`Check Login Status`）
 - 填写 Server/Token 后一键启动 runner
 
 说明：
