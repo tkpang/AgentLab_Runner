@@ -9,6 +9,7 @@ $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
 $authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
 $codexDeviceLoginScript = Join-Path $scriptDir "login-codex-device.ps1"
+$claudeGuideLoginScript = Join-Path $scriptDir "login-claude-guide.ps1"
 $uninstallScript = Join-Path $scriptDir "uninstall-windows.ps1"
 $accountSlotsScript = Join-Path $scriptDir "account-slots-windows.ps1"
 $quotaScript = Join-Path $scriptDir "quota-status-windows.ps1"
@@ -423,6 +424,7 @@ function T([string]$k) {
       "task_install_env" { return "Installing environment..." }
       "task_uninstall_env" { return "Uninstalling selected tools..." }
       "task_codex_device_login" { return "Starting Codex browser login..." }
+      "task_claude_login_guide" { return "Starting Claude login guide..." }
       "task_verify_env" { return "Verifying environment..." }
       "task_check_login" { return "Checking login status..." }
       "step_prepare" { return "Preparing environment..." }
@@ -448,6 +450,8 @@ function T([string]$k) {
       "msg_confirm_delete_tail" { return "' ?" }
       "msg_codex_device_title" { return "Codex Login" }
       "msg_codex_device_body" { return "Browser login started.`n`nURL:`n{0}`n`nCode (copied to clipboard): {1}`n`nAfter confirming in browser, click 'Check Login Status'." }
+      "msg_claude_login_title" { return "Claude Login" }
+      "msg_claude_login_body" { return "Claude login guide started.`n`nA browser page has been opened, and a terminal is launched with `claude login`.`n`nIf you don't have a Claude account yet, you can close this and continue using Codex only." }
       "title_save_slot_failed" { return "Save Slot Failed" }
       "title_activate_slot_failed" { return "Activate Slot Failed" }
       "title_delete_slot_failed" { return "Delete Slot Failed" }
@@ -526,6 +530,7 @@ function T([string]$k) {
     "task_install_env" { return "正在安装环境..." }
     "task_uninstall_env" { return "正在卸载所选工具..." }
     "task_codex_device_login" { return "正在启动 Codex 浏览器登录..." }
+    "task_claude_login_guide" { return "正在启动 Claude 登录引导..." }
     "task_verify_env" { return "正在检测环境..." }
     "task_check_login" { return "正在检查登录状态..." }
     "step_prepare" { return "正在准备环境..." }
@@ -551,6 +556,8 @@ function T([string]$k) {
     "msg_confirm_delete_tail" { return "' 吗？" }
     "msg_codex_device_title" { return "Codex 登录" }
     "msg_codex_device_body" { return "已启动浏览器登录。`n`nURL：`n{0}`n`n验证码（已复制到剪贴板）：{1}`n`n在浏览器确认后，请点击“检查登录状态”。" }
+    "msg_claude_login_title" { return "Claude 登录" }
+    "msg_claude_login_body" { return "已启动 Claude 登录引导。`n`n浏览器已打开登录页面，同时终端会执行 `claude login`。`n`n如果你当前没有 Claude 账户，可直接关闭并继续只使用 Codex。" }
     "title_save_slot_failed" { return "保存槽位失败" }
     "title_activate_slot_failed" { return "启用槽位失败" }
     "title_delete_slot_failed" { return "删除槽位失败" }
@@ -662,6 +669,9 @@ function Try-HandleGuiEvent([string]$line) {
           $msg = LT "msg_codex_device_body" @($url, $code)
           [System.Windows.Forms.MessageBox]::Show($msg, (T "msg_codex_device_title")) | Out-Null
         }
+      }
+      "claude_login_guide" {
+        [System.Windows.Forms.MessageBox]::Show((T "msg_claude_login_body"), (T "msg_claude_login_title")) | Out-Null
       }
       default {}
     }
@@ -1192,8 +1202,7 @@ $btnCodexLogin.Add_Click({
 })
 
 $btnClaudeLogin.Add_Click({
-  Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-NoExit","-File",$shellScript,"-Command","claude login") -WorkingDirectory $runnerRoot | Out-Null
-  Add-Log (LT "log_opened_terminal" @("claude login"))
+  Start-BackgroundScript (T "task_claude_login_guide") $claudeGuideLoginScript @("-OpenBrowser")
 })
 
 $btnOpenShell.Add_Click({

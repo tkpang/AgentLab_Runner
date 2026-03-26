@@ -83,7 +83,7 @@ GUI 安装器支持：
 - 勾选安装 Codex / Claude
 - 勾选中国镜像加速
 - Codex 一键网页登录（自动打开浏览器 + 自动复制设备码）
-- Claude 一键打开登录终端
+- Claude 引导式登录（自动打开登录页 + 自动拉起 `claude login` 终端 + 提示弹窗）
 - 一键检查登录状态（`Check Login Status`）
 - 启动后自动检测 Node / Codex / Claude，顶部显示红绿状态灯（可悬浮看路径）
 - 一键卸载所选工具（Codex / Claude / 可选 Node runtime）
@@ -92,6 +92,8 @@ GUI 安装器支持：
 - 安装时显示“当前步骤 + 下载速率（KB/s/MB/s）”，避免误判卡死
 - 填写 Server/Token 后一键启动 runner
 - 默认中文界面，可一键切换英文；日志提示也会跟随语言切换
+
+备注：Claude 登录是可选项。没有 Claude 账号也可以只使用 Codex 运行。
 
 说明：当前“余量查询”基于 Codex app-server 的 `account/rateLimits/read` 接口实现。
 
