@@ -5,6 +5,9 @@ INSTALL_CODEX=0
 INSTALL_CLAUDE=0
 SKIP_NODE=0
 SKIP_RUNNER_DEPS=0
+USE_CN_MIRROR=0
+NPM_REGISTRY="${NPM_REGISTRY:-}"
+NODE_DIST_BASE_URL="${NODE_DIST_BASE_URL:-}"
 
 for arg in "$@"; do
   case "$arg" in
@@ -13,9 +16,12 @@ for arg in "$@"; do
     --all) INSTALL_CODEX=1; INSTALL_CLAUDE=1 ;;
     --skip-node) SKIP_NODE=1 ;;
     --skip-runner-deps) SKIP_RUNNER_DEPS=1 ;;
+    --use-cn-mirror) USE_CN_MIRROR=1 ;;
+    --npm-registry=*) NPM_REGISTRY="${arg#*=}" ;;
+    --node-dist-base-url=*) NODE_DIST_BASE_URL="${arg#*=}" ;;
     *)
       echo "Unknown argument: $arg"
-      echo "Usage: bash scripts/setup-ubuntu.sh [--codex|--claude|--all] [--skip-node] [--skip-runner-deps]"
+      echo "Usage: bash scripts/setup-ubuntu.sh [--codex|--claude|--all] [--skip-node] [--skip-runner-deps] [--use-cn-mirror] [--npm-registry=<url>] [--node-dist-base-url=<url>]"
       exit 1
       ;;
   esac
@@ -24,6 +30,14 @@ done
 if [[ $INSTALL_CODEX -eq 0 && $INSTALL_CLAUDE -eq 0 ]]; then
   INSTALL_CODEX=1
   INSTALL_CLAUDE=1
+fi
+if [[ $USE_CN_MIRROR -eq 1 ]]; then
+  if [[ -z "$NPM_REGISTRY" ]]; then
+    NPM_REGISTRY="https://registry.npmmirror.com"
+  fi
+  if [[ -z "$NODE_DIST_BASE_URL" ]]; then
+    NODE_DIST_BASE_URL="https://npmmirror.com/mirrors/node"
+  fi
 fi
 
 need_cmd() {
@@ -78,12 +92,26 @@ install_portable_node20() {
   local runtime_root="$RUNNER_ROOT/.runtime"
   mkdir -p "$runtime_root"
 
-  local sum_url="https://nodejs.org/dist/latest-v20.x/SHASUMS256.txt"
-  local tar_name
-  tar_name="$(curl -fsSL "$sum_url" | awk '{print $2}' | grep -E "node-v20\.[0-9]+\.[0-9]+-linux-${arch}\.tar\.xz$" | head -n1)"
-  if [[ -z "$tar_name" ]]; then
-    echo "Cannot resolve latest Node.js v20 linux tarball from ${sum_url}" >&2
-    exit 1
+  local -a base_candidates=()
+  if [[ -n "$NODE_DIST_BASE_URL" ]]; then
+    base_candidates+=("${NODE_DIST_BASE_URL%/}")
+  fi
+  base_candidates+=("https://nodejs.org/dist")
+  local tar_name=""
+  local base_url=""
+  local sum_url=""
+  for candidate in "${base_candidates[@]}"; do
+    sum_url="${candidate}/latest-v20.x/SHASUMS256.txt"
+    tar_name="$(curl -fsSL "$sum_url" | awk '{print $2}' | grep -E "node-v20\.[0-9]+\.[0-9]+-linux-${arch}\.tar\.xz$" | head -n1 || true)"
+    if [[ -n "$tar_name" ]]; then
+      base_url="$candidate"
+      break
+    fi
+    echo "[setup] Node index fetch failed from ${candidate}, trying next source..."
+  done
+  if [[ -z "$tar_name" || -z "$base_url" ]]; then
+    echo "Cannot resolve latest Node.js v20 linux tarball from candidate mirrors." >&2
+    return 1
   fi
 
   local tar_path="$runtime_root/$tar_name"
@@ -92,7 +120,7 @@ install_portable_node20() {
   rm -f "$tar_path"
   mkdir -p "$extract_root"
 
-  curl -fsSL "https://nodejs.org/dist/latest-v20.x/${tar_name}" -o "$tar_path"
+  curl -fsSL "${base_url}/latest-v20.x/${tar_name}" -o "$tar_path"
   tar -xJf "$tar_path" -C "$extract_root"
   local node_dir
   node_dir="$(find "$extract_root" -mindepth 1 -maxdepth 1 -type d | head -n1)"
@@ -120,6 +148,14 @@ ensure_node20() {
   if [[ $SKIP_NODE -eq 1 ]]; then
     echo "Node.js >= 20/npm not found and --skip-node is set." >&2
     exit 1
+  fi
+
+  if [[ $USE_CN_MIRROR -eq 1 ]]; then
+    install_portable_node20 || true
+    major="$(node_major)"
+    if [[ "$major" -ge 20 ]] && need_cmd npm; then
+      return
+    fi
   fi
 
   if need_cmd apt-get; then
@@ -152,19 +188,26 @@ ensure_node20() {
 
 ensure_node20
 
+NPM_COMMON_ARGS=(--no-audit --fund=false --progress=false)
+NPM_REGISTRY_ARGS=()
+if [[ -n "$NPM_REGISTRY" ]]; then
+  echo "[setup] Using npm registry: $NPM_REGISTRY"
+  NPM_REGISTRY_ARGS+=(--registry "$NPM_REGISTRY")
+fi
+
 if [[ $INSTALL_CODEX -eq 1 ]]; then
   echo "[setup] Installing Codex CLI (@openai/codex) to local runner tools..."
-  npm install -g --prefix "$NPM_GLOBAL_PREFIX" @openai/codex
+  npm install -g --prefix "$NPM_GLOBAL_PREFIX" "${NPM_COMMON_ARGS[@]}" "${NPM_REGISTRY_ARGS[@]}" @openai/codex
 fi
 
 if [[ $INSTALL_CLAUDE -eq 1 ]]; then
   echo "[setup] Installing Claude Code CLI (@anthropic-ai/claude-code) to local runner tools..."
-  npm install -g --prefix "$NPM_GLOBAL_PREFIX" @anthropic-ai/claude-code
+  npm install -g --prefix "$NPM_GLOBAL_PREFIX" "${NPM_COMMON_ARGS[@]}" "${NPM_REGISTRY_ARGS[@]}" @anthropic-ai/claude-code
 fi
 
 if [[ $SKIP_RUNNER_DEPS -eq 0 ]]; then
   echo "[setup] Installing runner dependencies..."
-  npm --prefix "$RUNNER_ROOT" install
+  npm --prefix "$RUNNER_ROOT" install "${NPM_COMMON_ARGS[@]}" "${NPM_REGISTRY_ARGS[@]}"
 fi
 
 echo ""

@@ -17,10 +17,22 @@ Linux/Ubuntu（在 runner 独立仓库执行）:
 bash scripts/setup-ubuntu.sh --all
 ```
 
+中国网络建议（加速 npm/Node 下载）:
+
+```bash
+bash scripts/setup-ubuntu.sh --all --use-cn-mirror
+```
+
 Windows (PowerShell，在 runner 独立仓库执行):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -InstallAll
+```
+
+中国网络建议（加速 npm/Node 下载）:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup-windows.ps1 -InstallAll -UseChinaMirror
 ```
 
 Windows（双击方式，不闪退，推荐给非命令行用户）:
@@ -53,6 +65,9 @@ scripts\start-runner.cmd
 - `setup-*` 脚本会自动安装 runner 依赖（`npm install`），不需要再手工执行。
 - 默认把 `codex/claude` 安装到 runner 本地目录（`.tools/npm-global`），不污染系统全局环境。
 - 若系统没有可用 Node.js，脚本会优先尝试系统安装；失败时回退到 runner 内的便携 Node（`.runtime`）。
+- 可通过参数自定义下载源：
+  - Windows: `-NpmRegistry <url> -NodeDistBaseUrl <url>`
+  - Ubuntu: `--npm-registry=<url> --node-dist-base-url=<url>`
 
 如果你在主仓库中运行（runner 作为子目录），命令前加 `runner/` 前缀即可，例如：
 

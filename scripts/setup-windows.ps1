@@ -3,7 +3,10 @@ param(
   [switch]$InstallClaude,
   [switch]$InstallAll,
   [switch]$SkipNodeInstall,
-  [switch]$SkipRunnerDeps
+  [switch]$SkipRunnerDeps,
+  [switch]$UseChinaMirror,
+  [string]$NpmRegistry = "",
+  [string]$NodeDistBaseUrl = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -53,43 +56,63 @@ function Resolve-NpmCommand([string]$portableNodeBin) {
   throw "npm not found. Please rerun setup."
 }
 
-function Install-PortableNode20([string]$runtimeRoot, [string]$portableNodeBin) {
+function Install-PortableNode20([string]$runtimeRoot, [string]$portableNodeBin, [string]$nodeDistBaseUrl) {
   Write-Host "[setup] Installing portable Node.js 20 (no admin required)..."
   New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null
 
-  $shaUrl = "https://nodejs.org/dist/latest-v20.x/SHASUMS256.txt"
-  $shaRaw = (Invoke-WebRequest -UseBasicParsing -Uri $shaUrl).Content
-  $zipName = ($shaRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "node-v20\.[0-9]+\.[0-9]+-win-x64\.zip$" } | Select-Object -First 1)
-  if ([string]::IsNullOrWhiteSpace($zipName)) {
-    throw "Cannot resolve latest Node.js v20 win-x64 zip from $shaUrl"
+  $baseCandidates = @()
+  if (-not [string]::IsNullOrWhiteSpace($nodeDistBaseUrl)) {
+    $baseCandidates += $nodeDistBaseUrl.TrimEnd("/")
   }
-  $zipName = ($zipName -split "\s+")[-1]
-  $zipUrl = "https://nodejs.org/dist/latest-v20.x/$zipName"
-  $zipPath = Join-Path $runtimeRoot $zipName
-  $extractRoot = Join-Path $runtimeRoot "node-extract"
+  $baseCandidates += "https://nodejs.org/dist"
 
-  if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue }
-  if (Test-Path $extractRoot) { Remove-Item -Path $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+  $installed = $false
+  foreach ($baseUrl in $baseCandidates) {
+    try {
+      $shaUrl = "$baseUrl/latest-v20.x/SHASUMS256.txt"
+      $shaRaw = (Invoke-WebRequest -UseBasicParsing -Uri $shaUrl).Content
+      $zipName = ($shaRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "node-v20\.[0-9]+\.[0-9]+-win-x64\.zip$" } | Select-Object -First 1)
+      if ([string]::IsNullOrWhiteSpace($zipName)) {
+        throw "Cannot resolve Node.js v20 win-x64 zip from $shaUrl"
+      }
 
-  Invoke-WebRequest -UseBasicParsing -Uri $zipUrl -OutFile $zipPath
-  Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
-  $nodeDir = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
-  if ($null -eq $nodeDir) {
-    throw "Portable Node archive extracted but folder not found."
+      $zipName = ($zipName -split "\s+")[-1]
+      $zipUrl = "$baseUrl/latest-v20.x/$zipName"
+      $zipPath = Join-Path $runtimeRoot $zipName
+      $extractRoot = Join-Path $runtimeRoot "node-extract"
+
+      if (Test-Path $zipPath) { Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue }
+      if (Test-Path $extractRoot) { Remove-Item -Path $extractRoot -Recurse -Force -ErrorAction SilentlyContinue }
+
+      Invoke-WebRequest -UseBasicParsing -Uri $zipUrl -OutFile $zipPath
+      Expand-Archive -Path $zipPath -DestinationPath $extractRoot -Force
+      $nodeDir = Get-ChildItem -Path $extractRoot -Directory | Select-Object -First 1
+      if ($null -eq $nodeDir) {
+        throw "Portable Node archive extracted but folder not found."
+      }
+
+      $portableNodeRoot = Split-Path -Path $portableNodeBin -Parent
+      New-Item -ItemType Directory -Path $portableNodeRoot -Force | Out-Null
+      if (Test-Path $portableNodeBin) {
+        Remove-Item -Path $portableNodeBin -Recurse -Force -ErrorAction SilentlyContinue
+      }
+      Move-Item -Path $nodeDir.FullName -Destination $portableNodeBin -Force
+
+      Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
+      Remove-Item -Path $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
+      $installed = $true
+      break
+    }
+    catch {
+      Write-Host ("[setup] Node download failed from " + $baseUrl + ", trying next source...") -ForegroundColor Yellow
+    }
   }
-
-  $portableNodeRoot = Split-Path -Path $portableNodeBin -Parent
-  New-Item -ItemType Directory -Path $portableNodeRoot -Force | Out-Null
-  if (Test-Path $portableNodeBin) {
-    Remove-Item -Path $portableNodeBin -Recurse -Force -ErrorAction SilentlyContinue
+  if (-not $installed) {
+    throw "Portable Node install failed from all candidate sources."
   }
-  Move-Item -Path $nodeDir.FullName -Destination $portableNodeBin -Force
-
-  Remove-Item -Path $zipPath -Force -ErrorAction SilentlyContinue
-  Remove-Item -Path $extractRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-function Ensure-Node20([string]$runtimeRoot, [string]$portableNodeBin) {
+function Ensure-Node20([string]$runtimeRoot, [string]$portableNodeBin, [string]$nodeDistBaseUrl) {
   Add-PathOnce $portableNodeBin
   $major = Get-NodeMajorVersion
   if ($major -ge 20 -and (Test-Cmd "npm")) {
@@ -117,7 +140,7 @@ function Ensure-Node20([string]$runtimeRoot, [string]$portableNodeBin) {
     return
   }
 
-  Install-PortableNode20 -runtimeRoot $runtimeRoot -portableNodeBin $portableNodeBin
+  Install-PortableNode20 -runtimeRoot $runtimeRoot -portableNodeBin $portableNodeBin -nodeDistBaseUrl $nodeDistBaseUrl
   Add-PathOnce $portableNodeBin
   $major = Get-NodeMajorVersion
   if ($major -lt 20 -or -not (Test-Cmd "npm")) {
@@ -131,6 +154,14 @@ if ($InstallAll.IsPresent -or (-not $wantCodex -and -not $wantClaude)) {
   $wantCodex = $true
   $wantClaude = $true
 }
+if ($UseChinaMirror.IsPresent) {
+  if ([string]::IsNullOrWhiteSpace($NpmRegistry)) {
+    $NpmRegistry = "https://registry.npmmirror.com"
+  }
+  if ([string]::IsNullOrWhiteSpace($NodeDistBaseUrl)) {
+    $NodeDistBaseUrl = "https://npmmirror.com/mirrors/node"
+  }
+}
 
 try {
   $runnerRoot = Resolve-RunnerRoot
@@ -142,26 +173,44 @@ try {
   New-Item -ItemType Directory -Path $toolsRoot -Force | Out-Null
   New-Item -ItemType Directory -Path $npmGlobalPrefix -Force | Out-Null
 
-  Ensure-Node20 -runtimeRoot $runtimeRoot -portableNodeBin $portableNodeBin
+  Ensure-Node20 -runtimeRoot $runtimeRoot -portableNodeBin $portableNodeBin -nodeDistBaseUrl $NodeDistBaseUrl
 
   Add-PathOnce $npmGlobalPrefix
   Add-PathOnce (Join-Path $npmGlobalPrefix "node_modules/.bin")
 
   $npmCmd = Resolve-NpmCommand -portableNodeBin $portableNodeBin
+  $npmCommonArgs = @("--no-audit", "--fund=false", "--progress=false")
+  if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
+    Write-Host ("[setup] Using npm registry: " + $NpmRegistry)
+  }
 
   if ($wantCodex) {
     Write-Host "[setup] Installing Codex CLI (@openai/codex) to local runner tools..."
-    & $npmCmd install -g --prefix $npmGlobalPrefix @openai/codex
+    $codexArgs = @("install", "-g", "--prefix", $npmGlobalPrefix) + $npmCommonArgs
+    if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
+      $codexArgs += @("--registry", $NpmRegistry)
+    }
+    $codexArgs += "@openai/codex"
+    & $npmCmd @codexArgs
   }
 
   if ($wantClaude) {
     Write-Host "[setup] Installing Claude Code CLI (@anthropic-ai/claude-code) to local runner tools..."
-    & $npmCmd install -g --prefix $npmGlobalPrefix @anthropic-ai/claude-code
+    $claudeArgs = @("install", "-g", "--prefix", $npmGlobalPrefix) + $npmCommonArgs
+    if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
+      $claudeArgs += @("--registry", $NpmRegistry)
+    }
+    $claudeArgs += "@anthropic-ai/claude-code"
+    & $npmCmd @claudeArgs
   }
 
   if (-not $SkipRunnerDeps.IsPresent) {
     Write-Host "[setup] Installing runner dependencies..."
-    & $npmCmd --prefix $runnerRoot install
+    $depsArgs = @("--prefix", $runnerRoot, "install") + $npmCommonArgs
+    if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
+      $depsArgs += @("--registry", $NpmRegistry)
+    }
+    & $npmCmd @depsArgs
   }
 
   Write-Host ""
