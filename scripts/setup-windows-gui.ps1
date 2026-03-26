@@ -199,25 +199,26 @@ $form.Controls.Add($groupStart)
 
 $lblServer = New-Object System.Windows.Forms.Label
 $lblServer.Text = "Server:"
-$lblServer.Location = New-Object System.Drawing.Point(18, 34)
+$lblServer.Location = New-Object System.Drawing.Point(18, 36)
 $lblServer.AutoSize = $true
 $groupStart.Controls.Add($lblServer)
 
 $tbServer = New-Object System.Windows.Forms.TextBox
 $tbServer.Text = "http://127.0.0.1:3200"
-$tbServer.Location = New-Object System.Drawing.Point(72, 30)
-$tbServer.Size = New-Object System.Drawing.Size(350, 23)
+$tbServer.Location = New-Object System.Drawing.Point(92, 32)
+$tbServer.Size = New-Object System.Drawing.Size(380, 23)
 $groupStart.Controls.Add($tbServer)
+$tbServer.Text = $tbServer.Text.Trim().Trim('"')
 
 $lblToken = New-Object System.Windows.Forms.Label
 $lblToken.Text = "Token:"
-$lblToken.Location = New-Object System.Drawing.Point(18, 68)
+$lblToken.Location = New-Object System.Drawing.Point(18, 70)
 $lblToken.AutoSize = $true
 $groupStart.Controls.Add($lblToken)
 
 $tbToken = New-Object System.Windows.Forms.TextBox
-$tbToken.Location = New-Object System.Drawing.Point(72, 64)
-$tbToken.Size = New-Object System.Drawing.Size(600, 23)
+$tbToken.Location = New-Object System.Drawing.Point(92, 66)
+$tbToken.Size = New-Object System.Drawing.Size(580, 23)
 $groupStart.Controls.Add($tbToken)
 
 $btnStartRunner = New-Object System.Windows.Forms.Button
@@ -311,10 +312,18 @@ $tbLog.Location = New-Object System.Drawing.Point(16, 24)
 $tbLog.Size = New-Object System.Drawing.Size(868, 140)
 $groupLog.Controls.Add($tbLog)
 
+$progressInstall = New-Object System.Windows.Forms.ProgressBar
+$progressInstall.Location = New-Object System.Drawing.Point(20, 862)
+$progressInstall.Size = New-Object System.Drawing.Size(900, 14)
+$progressInstall.Style = [System.Windows.Forms.ProgressBarStyle]::Marquee
+$progressInstall.MarqueeAnimationSpeed = 25
+$progressInstall.Visible = $false
+$form.Controls.Add($progressInstall)
+
 $status = New-Object System.Windows.Forms.Label
 $status.Text = "Ready"
 $status.AutoSize = $true
-$status.Location = New-Object System.Drawing.Point(22, 882)
+$status.Location = New-Object System.Drawing.Point(22, 880)
 $form.Controls.Add($status)
 
 $toolTip = New-Object System.Windows.Forms.ToolTip
@@ -413,6 +422,7 @@ function T([string]$k) {
       "log_opened_runner_shell" { return "Opened runner shell." }
       "log_runner_root" { return "Runner root: {0}" }
       "log_env_summary" { return "Environment: Node={0}, Codex={1}, Claude={2}" }
+      "log_install_selection" { return "Install selection => Codex={0}, Claude={1}, CNMirror={2}" }
       default { return $k }
     }
   }
@@ -496,14 +506,15 @@ function T([string]$k) {
     "log_opened_runner_shell" { return "已打开 Runner 终端。" }
     "log_runner_root" { return "Runner 根目录：{0}" }
     "log_env_summary" { return "环境状态：Node={0}，Codex={1}，Claude={2}" }
+    "log_install_selection" { return "安装选择 => Codex={0}，Claude={1}，国内镜像={2}" }
     default { return $k }
   }
 }
 
-function LT([string]$key, [object[]]$args = @()) {
+function LT([string]$key, [object[]]$fmtArgs = @()) {
   $template = [string](T $key)
-  if ($args -ne $null -and $args.Count -gt 0) {
-    return [string]::Format($template, $args)
+  if ($fmtArgs -ne $null -and $fmtArgs.Count -gt 0) {
+    return [string]::Format($template, [object[]]$fmtArgs)
   }
   return $template
 }
@@ -547,10 +558,14 @@ function Refresh-EnvironmentIndicators([bool]$writeLog = $false) {
     (Join-Path $runnerRoot ".runtime/node/current/node")
   )
   $script:envPaths.codex = Resolve-ToolPath "codex" @(
+    (Join-Path $runnerRoot ".tools/npm-global/codex.cmd")
+    (Join-Path $runnerRoot ".tools/npm-global/codex")
     (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/codex.cmd")
     (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/codex")
   )
   $script:envPaths.claude = Resolve-ToolPath "claude" @(
+    (Join-Path $runnerRoot ".tools/npm-global/claude.cmd")
+    (Join-Path $runnerRoot ".tools/npm-global/claude")
     (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/claude.cmd")
     (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin/claude")
   )
@@ -702,6 +717,7 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $cbCodex.Enabled = -not $busy
   $cbClaude.Enabled = -not $busy
   $cbMirror.Enabled = -not $busy
+  $progressInstall.Visible = $busy
   if ($busy) {
     $status.Text = $text
   } else {
@@ -718,9 +734,9 @@ function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [stri
   Set-Busy $true $displayName
 
   $script:activeJob = Start-Job -ScriptBlock {
-    param($targetScript, $args, $cwd)
+    param($targetScript, $targetArgs, $cwd)
     Set-Location $cwd
-    & $targetScript @args 2>&1 | ForEach-Object { $_.ToString() }
+    & $targetScript @targetArgs 2>&1 | ForEach-Object { $_.ToString() }
     $code = if ($LASTEXITCODE -is [int]) { $LASTEXITCODE } else { 0 }
     "__EXIT_CODE__:$code"
   } -ArgumentList $scriptPath, $arguments, $runnerRoot
@@ -729,14 +745,14 @@ function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [stri
 }
 
 function Invoke-SlotActionJson([string]$action, [string]$slot) {
-  $args = @("-Action", $action, "-Json")
+  $slotArgs = @($action)
   if (-not [string]::IsNullOrWhiteSpace($slot)) {
-    $args += @("-Slot", $slot)
+    $slotArgs += @($slot)
   }
-  $raw = & $accountSlotsScript @args 2>&1 | Out-String
+  $raw = & $accountSlotsScript @slotArgs -Json 2>&1 | Out-String
   if ([string]::IsNullOrWhiteSpace($raw)) {
     # Fallback: explicitly invoke by powershell -File to avoid invocation-policy edge cases.
-    $fallbackArgs = @("-NoProfile","-ExecutionPolicy","Bypass","-File",$accountSlotsScript) + $args
+    $fallbackArgs = @("-NoProfile","-ExecutionPolicy","Bypass","-File",$accountSlotsScript) + $slotArgs + @("-Json")
     $raw = & powershell @fallbackArgs 2>&1 | Out-String
   }
   if ([string]::IsNullOrWhiteSpace($raw)) {
@@ -873,21 +889,19 @@ $timer.Add_Tick({
 })
 
 $btnInstall.Add_Click({
-  $args = @()
-  if ($cbCodex.Checked -and $cbClaude.Checked) {
-    $args += "-InstallAll"
-  } elseif ($cbCodex.Checked) {
-    $args += "-InstallCodex"
-  } elseif ($cbClaude.Checked) {
-    $args += "-InstallClaude"
-  } else {
+  if (-not $cbCodex.Checked -and -not $cbClaude.Checked) {
     [System.Windows.Forms.MessageBox]::Show((T "msg_select_cli"), (T "group_install"))
     return
   }
+  $installArgs = @(
+    "-InstallCodex:$($cbCodex.Checked.ToString().ToLowerInvariant())",
+    "-InstallClaude:$($cbClaude.Checked.ToString().ToLowerInvariant())"
+  )
   if ($cbMirror.Checked) {
-    $args += "-UseChinaMirror"
+    $installArgs += "-UseChinaMirror"
   }
-  Start-BackgroundScript (T "task_install_env") $setupScript $args
+  Add-Log (LT "log_install_selection" @($cbCodex.Checked, $cbClaude.Checked, $cbMirror.Checked))
+  Start-BackgroundScript (T "task_install_env") $setupScript $installArgs
 })
 
 $btnVerify.Add_Click({
@@ -992,7 +1006,7 @@ $btnOpenShell.Add_Click({
 
 $btnStartRunner.Add_Click({
   $token = $tbToken.Text.Trim()
-  $server = $tbServer.Text.Trim()
+  $server = $tbServer.Text.Trim().Trim('"')
   if ([string]::IsNullOrWhiteSpace($token)) {
     [System.Windows.Forms.MessageBox]::Show((T "msg_token_required"), (T "group_start"))
     return

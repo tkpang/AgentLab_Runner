@@ -180,8 +180,12 @@ try {
 
   $npmCmd = Resolve-NpmCommand -portableNodeBin $portableNodeBin
   $npmCommonArgs = @("--no-audit", "--fund=false", "--progress=false")
+  Write-Host ("[setup] Target CLIs: codex=" + $wantCodex + ", claude=" + $wantClaude)
   if (-not [string]::IsNullOrWhiteSpace($NpmRegistry)) {
     Write-Host ("[setup] Using npm registry: " + $NpmRegistry)
+  }
+  if (-not [string]::IsNullOrWhiteSpace($NodeDistBaseUrl)) {
+    Write-Host ("[setup] Using Node dist mirror: " + $NodeDistBaseUrl)
   }
 
   if ($wantCodex) {

@@ -276,6 +276,15 @@ function List-Slots() {
 }
 
 try {
+  # Compatibility shim for callers that accidentally pass positional tokens like:
+  # script.ps1 -Action list -Json
+  if ($Action -ieq "-Action" -and -not [string]::IsNullOrWhiteSpace($Slot)) {
+    $Action = $Slot
+    $Slot = ""
+  }
+  if ($Slot -ieq "-Json") {
+    $Slot = ""
+  }
   $Action = Normalize-Action $Action
   Ensure-Dir $accountsRoot
   switch ($Action) {
