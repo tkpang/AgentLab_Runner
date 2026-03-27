@@ -977,15 +977,11 @@ async function stopRunnerHandler() {
     }
   }
 
-  if (!stoppedByPid && !IS_WIN) {
-    // Linux fallback for stale pid file/process tree.
-    try {
-      spawnSync('bash', ['-lc', 'pkill -f "tsx .*agentlab-runner.ts|agentlab-runner.ts" >/dev/null 2>&1 || true'], {
-        env: buildRunnerEnv(),
-        stdio: 'ignore',
-      });
-    } catch {
-      // ignore
+  if (!stoppedByPid) {
+    const fallbackStopped = killRunnerDaemonFallback();
+    if (fallbackStopped) {
+      hadRunningProcess = true;
+      stoppedByPid = true;
     }
   }
 
@@ -1029,18 +1025,133 @@ function isPidRunning(pid) {
   }
 }
 
+function writePidFile(pidPath, pid) {
+  try {
+    if (!Number.isFinite(pid) || pid <= 0) return;
+    ensureDir(path.dirname(pidPath));
+    fs.writeFileSync(pidPath, `${pid}\n`, 'utf8');
+  } catch {
+    // ignore
+  }
+}
+
+function detectPidByPatterns(patterns = []) {
+  const safePatterns = patterns
+    .map((x) => String(x || '').trim())
+    .filter(Boolean);
+  if (!safePatterns.length) return 0;
+
+  if (IS_WIN) {
+    const rootEscaped = ROOT_DIR.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const quotedPatterns = safePatterns.map((x) => `'${x.replace(/'/g, "''")}'`).join(',');
+    const script = [
+      `$root='${rootEscaped}'.ToLower()`,
+      `$patterns=@(${quotedPatterns})`,
+      "$proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+      "  $cmd = [string]$_.CommandLine",
+      "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
+      "  $cmdLower = $cmd.ToLower()",
+      "  if ($cmdLower -notlike ('*' + $root + '*')) { return $false }",
+      "  foreach ($p in $patterns) { if ($cmdLower.Contains($p.ToLower())) { return $true } }",
+      "  return $false",
+      "} | Select-Object -First 1 -ExpandProperty ProcessId",
+      "if ($proc) { Write-Output $proc }"
+    ].join('; ');
+    const out = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
+      encoding: 'utf8',
+      windowsHide: true,
+      env: buildRunnerEnv(),
+    });
+    const pid = Number.parseInt(String(out.stdout || '').trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : 0;
+  }
+
+  const patternExpr = safePatterns.join('|');
+  const out = spawnSync('bash', ['-lc', `pgrep -f ${JSON.stringify(patternExpr)} | head -n 1`], {
+    encoding: 'utf8',
+    env: buildRunnerEnv(),
+  });
+  const pid = Number.parseInt(String(out.stdout || '').trim(), 10);
+  return Number.isFinite(pid) && pid > 0 ? pid : 0;
+}
+
+function killRunnerDaemonFallback() {
+  if (IS_WIN) {
+    const rootEscaped = ROOT_DIR.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const script = [
+      `$root='${rootEscaped}'.ToLower()`,
+      "$patterns=@('agentlab-runner.ts','start-runner.ps1')",
+      "$targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+      "  $cmd = [string]$_.CommandLine",
+      "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
+      "  $cmdLower = $cmd.ToLower()",
+      "  if ($cmdLower -notlike ('*' + $root + '*')) { return $false }",
+      "  foreach ($p in $patterns) { if ($cmdLower.Contains($p)) { return $true } }",
+      "  return $false",
+      "}",
+      "$count = 0",
+      "foreach ($t in $targets) {",
+      "  try { Stop-Process -Id ([int]$t.ProcessId) -Force -ErrorAction SilentlyContinue; $count++ } catch {}",
+      "}",
+      "Write-Output $count"
+    ].join('; ');
+    const out = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
+      encoding: 'utf8',
+      windowsHide: true,
+      env: buildRunnerEnv(),
+    });
+    const count = Number.parseInt(String(out.stdout || '').trim(), 10);
+    return Number.isFinite(count) && count > 0;
+  }
+
+  try {
+    spawnSync('bash', ['-lc', 'pkill -f "tsx .*agentlab-runner.ts|agentlab-runner.ts" >/dev/null 2>&1 || true'], {
+      env: buildRunnerEnv(),
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function getRunnerRuntimeStatus() {
-  const runnerPid = readPidFromFile(path.join(RUN_DIR, 'runner.pid'));
-  const guiPid = readPidFromFile(path.join(RUN_DIR, 'gui.pid'));
+  const runnerPidPath = path.join(RUN_DIR, 'runner.pid');
+  const guiPidPath = path.join(RUN_DIR, 'gui.pid');
+
+  let runnerPid = readPidFromFile(runnerPidPath);
+  let guiPid = readPidFromFile(guiPidPath);
+
+  let runnerRunning = isPidRunning(runnerPid);
+  let guiRunning = isPidRunning(guiPid);
+
+  if (!runnerRunning) {
+    const detectedRunnerPid = detectPidByPatterns(['agentlab-runner.ts', 'start-runner.ps1']);
+    if (detectedRunnerPid > 0) {
+      runnerPid = detectedRunnerPid;
+      runnerRunning = true;
+      writePidFile(runnerPidPath, detectedRunnerPid);
+    }
+  }
+
+  if (!guiRunning) {
+    const detectedGuiPid = detectPidByPatterns(['gui\\server.cjs', 'electron-main.cjs', 'start-web-gui.ps1', 'start-desktop-gui.ps1']);
+    if (detectedGuiPid > 0) {
+      guiPid = detectedGuiPid;
+      guiRunning = true;
+      writePidFile(guiPidPath, detectedGuiPid);
+    }
+  }
+
   return {
     ok: true,
     runner: {
       pid: runnerPid || null,
-      running: isPidRunning(runnerPid)
+      running: runnerRunning
     },
     gui: {
       pid: guiPid || null,
-      running: isPidRunning(guiPid)
+      running: guiRunning
     }
   };
 }

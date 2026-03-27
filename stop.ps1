@@ -41,5 +41,39 @@ function Stop-ManagedProcess {
   Remove-Item -Path $PidFile -ErrorAction SilentlyContinue
 }
 
+function Stop-StaleRunnerProcesses {
+  param([string]$RootPath)
+
+  $normalizedRoot = [regex]::Escape($RootPath.ToLowerInvariant())
+  try {
+    $candidates = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+      $cmd = [string]$_.CommandLine
+      if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }
+      $cmdLower = $cmd.ToLowerInvariant()
+      if ($cmdLower -notmatch $normalizedRoot) { return $false }
+      return (
+        $cmdLower.Contains("agentlab-runner.ts") -or
+        $cmdLower.Contains("start-runner.ps1") -or
+        $cmdLower.Contains("gui\\server.cjs") -or
+        $cmdLower.Contains("electron-main.cjs") -or
+        $cmdLower.Contains("start-desktop-gui.ps1") -or
+        $cmdLower.Contains("start-web-gui.ps1")
+      )
+    }
+
+    foreach ($proc in $candidates) {
+      try {
+        Stop-Process -Id ([int]$proc.ProcessId) -Force -ErrorAction SilentlyContinue
+        Write-Host "[runner] cleaned stale process pid=$($proc.ProcessId)"
+      } catch {
+        # ignore single process failures
+      }
+    }
+  } catch {
+    # ignore fallback cleanup failures
+  }
+}
+
 Stop-ManagedProcess -Name "Runner daemon" -PidFile $runnerPidFile
 Stop-ManagedProcess -Name "GUI process" -PidFile $guiPidFile
+Stop-StaleRunnerProcesses -RootPath $root

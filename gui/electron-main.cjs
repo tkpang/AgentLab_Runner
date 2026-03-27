@@ -1,5 +1,6 @@
 // Electron Main Process - Desktop App Wrapper
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -8,8 +9,36 @@ let tray = null;
 let serverProcess = null;
 const DEFAULT_GUI_PORT = 18765;
 const SERVER_PORT = Number(process.env.AGENTLAB_GUI_PORT || DEFAULT_GUI_PORT);
+const ROOT_DIR = path.join(__dirname, '..');
+const RUN_DIR = path.join(ROOT_DIR, '.run');
+const USER_DATA_DIR = path.join(RUN_DIR, 'electron-user-data');
+const ICON_PATH = path.join(__dirname, 'icon.png');
+const TRAY_ICON_PATH = path.join(__dirname, 'tray-icon.png');
+
+try {
+  fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+} catch {
+  // ignore
+}
+try {
+  app.setPath('userData', USER_DATA_DIR);
+} catch {
+  // ignore
+}
+
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+  process.exit(0);
+}
 
 function createBrandIcon(size = 256) {
+  if (size > 32 && fs.existsSync(ICON_PATH)) {
+    return nativeImage.createFromPath(ICON_PATH);
+  }
+  if (size <= 32 && fs.existsSync(TRAY_ICON_PATH)) {
+    return nativeImage.createFromPath(TRAY_ICON_PATH);
+  }
   const safeSize = Math.max(16, Number(size) || 256);
   const svg = `
   <svg xmlns="http://www.w3.org/2000/svg" width="${safeSize}" height="${safeSize}" viewBox="0 0 128 128">
@@ -153,6 +182,14 @@ app.whenReady().then(() => {
       mainWindow.show();
     }
   });
+});
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
 });
 
 // Quit when all windows are closed (except on macOS)
