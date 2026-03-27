@@ -105,7 +105,7 @@ function commandExists(cmd) {
 
 function commandVersion(cmd) {
   if (!commandExists(cmd)) return '';
-  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv() });
+  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv(), shell: IS_WIN });
   const text = `${out.stdout || ''}\n${out.stderr || ''}`.trim();
   return text.split(/\r?\n/)[0] || '';
 }
@@ -115,6 +115,7 @@ function runCommand(command, args = [], options = {}) {
     const proc = spawn(command, args, {
       cwd: ROOT_DIR,
       windowsHide: true,
+      shell: IS_WIN,
       ...options,
       env: buildRunnerEnv(options.env || {})
     });
@@ -452,6 +453,7 @@ function fetchCodexRateLimitsViaAppServer() {
     const proc = spawn('codex', ['app-server'], {
       cwd: ROOT_DIR,
       windowsHide: true,
+      shell: IS_WIN,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: buildRunnerEnv()
     });
