@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentLab Runner - 控制面板</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>AgentLab Runner</h1>
+      <p class="subtitle">本地 AI 编程助手管理面板</p>
+    </header>
+
+    <!-- 额度余量区域 -->
+    <section class="quota-section">
+      <div class="section-header">
+        <h2>额度余量（精简）</h2>
+        <button class="btn-refresh" onclick="refreshQuota()">刷新额度</button>
+      </div>
+      <p class="quota-description">显示 Codex 与 Claude Code 的 5h/7d 指标余量。</p>
+      <p class="update-time">更新时间: <span id="quotaUpdateTime">--</span></p>
+
+      <!-- Codex 额度卡片 -->
+      <div class="quota-card">
+        <div class="card-header">
+          <div class="tool-icon codex-icon">🤖</div>
+          <h3>Codex</h3>
+          <span class="status-badge" id="codexStatusBadge">未检查</span>
+        </div>
+        <div class="quota-bars">
+          <div class="quota-item">
+            <div class="quota-label">
+              <span>5h</span>
+              <span class="quota-percent" id="codex5hPercent">剩余: --% · 已用: --%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="codex5hBar" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="quota-item">
+            <div class="quota-label">
+              <span>7d</span>
+              <span class="quota-percent" id="codex7dPercent">剩余: --% · 已用: --%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="codex7dBar" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Claude Code 额度卡片 -->
+      <div class="quota-card">
+        <div class="card-header">
+          <div class="tool-icon claude-icon">🔶</div>
+          <h3>Claude Code</h3>
+          <span class="status-badge" id="claudeStatusBadge">未检查</span>
+        </div>
+        <div class="quota-bars">
+          <div class="quota-item">
+            <div class="quota-label">
+              <span>5h</span>
+              <span class="quota-percent" id="claude5hPercent">剩余: --% · 已用: --%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="claude5hBar" style="width: 0%"></div>
+            </div>
+          </div>
+          <div class="quota-item">
+            <div class="quota-label">
+              <span>7d</span>
+              <span class="quota-percent" id="claude7dPercent">剩余: --% · 已用: --%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="claude7dBar" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 环境检测区域 -->
+    <section class="env-section">
+      <div class="section-header">
+        <h2>环境检测</h2>
+        <button class="btn-check" onclick="checkEnvironment()">检测 Codex / Claude</button>
+      </div>
+      <p class="update-time">检测时间: <span id="envUpdateTime">--</span></p>
+
+      <div class="env-cards">
+        <!-- Codex 环境卡片 -->
+        <div class="env-card">
+          <div class="card-header">
+            <div class="tool-icon codex-icon">🤖</div>
+            <h3>Codex</h3>
+            <span class="status-badge" id="codexEnvBadge">未检测</span>
+          </div>
+          <div class="env-details">
+            <div class="detail-item">
+              <span class="label">命令路径:</span>
+              <span class="value" id="codexPath">--</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">版本:</span>
+              <span class="value" id="codexVersion">--</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">认证状态:</span>
+              <span class="value" id="codexAuth">--</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Claude Code 环境卡片 -->
+        <div class="env-card">
+          <div class="card-header">
+            <div class="tool-icon claude-icon">🔶</div>
+            <h3>Claude Code</h3>
+            <span class="status-badge" id="claudeEnvBadge">未检测</span>
+          </div>
+          <div class="env-details">
+            <div class="detail-item">
+              <span class="label">命令路径:</span>
+              <span class="value" id="claudePath">--</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">版本:</span>
+              <span class="value" id="claudeVersion">--</span>
+            </div>
+            <div class="detail-item">
+              <span class="label">认证状态:</span>
+              <span class="value" id="claudeAuth">--</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 快捷操作区域 -->
+    <section class="actions-section">
+      <h2>快捷操作</h2>
+      <div class="action-buttons">
+        <button class="btn-action" onclick="installEnvironment()">
+          <span class="btn-icon">📦</span>
+          <span>安装环境</span>
+        </button>
+        <button class="btn-action" onclick="loginCodex()">
+          <span class="btn-icon">🔐</span>
+          <span>登录 Codex</span>
+        </button>
+        <button class="btn-action" onclick="loginClaude()">
+          <span class="btn-icon">🔐</span>
+          <span>登录 Claude</span>
+        </button>
+        <button class="btn-action" onclick="manageSlots()">
+          <span class="btn-icon">👥</span>
+          <span>账号槽位</span>
+        </button>
+        <button class="btn-action" onclick="openShell()">
+          <span class="btn-icon">💻</span>
+          <span>打开终端</span>
+        </button>
+        <button class="btn-action" onclick="startRunner()">
+          <span class="btn-icon">🚀</span>
+          <span>启动 Runner</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- 日志区域 -->
+    <section class="log-section">
+      <h2>操作日志</h2>
+      <div class="log-container" id="logContainer">
+        <div class="log-entry">欢迎使用 AgentLab Runner 控制面板</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

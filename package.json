@@ -10,6 +10,7 @@
     "start:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/start-runner.ps1"
   },
   "dependencies": {
+    "@agentlab/runner": "file:",
     "tsx": "^4.20.5"
   },
   "devDependencies": {

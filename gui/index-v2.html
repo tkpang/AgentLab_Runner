@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentLab Runner</title>
+  <link rel="stylesheet" href="styles-v2.css">
+</head>
+<body>
+  <!-- Custom Title Bar -->
+  <div class="titlebar">
+    <div class="titlebar-drag">
+      <span class="app-icon">🤖</span>
+      <span class="app-title">AgentLab Runner - 控制面板</span>
+      <span class="app-version">v1.0</span>
+    </div>
+    <div class="titlebar-buttons">
+      <button class="titlebar-btn minimize" onclick="minimizeWindow()">─</button>
+      <button class="titlebar-btn close" onclick="closeWindow()">✕</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Environment Status & Quick Actions -->
+    <section class="env-quick-section">
+      <div class="section-header-inline">
+        <h2>🔧 环境状态 & 快捷操作</h2>
+        <button class="btn-check-small" onclick="checkEnvironment()">检测环境</button>
+      </div>
+      <div class="env-grid">
+        <div class="env-cell">
+          <div class="env-icon codex-bg">📦</div>
+          <div class="env-name">Codex</div>
+          <div class="env-status" id="codexInstallStatus">未检测</div>
+          <div class="env-status" id="codexAuthStatus">未检测</div>
+          <button class="btn-cell" onclick="loginCodex()" id="btnCodexLogin">登录</button>
+        </div>
+        <div class="env-cell">
+          <div class="env-icon claude-bg">🔶</div>
+          <div class="env-name">Claude</div>
+          <div class="env-status" id="claudeInstallStatus">未检测</div>
+          <div class="env-status" id="claudeAuthStatus">未检测</div>
+          <button class="btn-cell" onclick="loginClaude()" id="btnClaudeLogin">登录</button>
+        </div>
+        <div class="env-cell">
+          <div class="env-icon install-bg">📦</div>
+          <div class="env-name">安装环境</div>
+          <div class="env-desc">一键安装</div>
+          <div class="env-desc">Codex & Claude</div>
+          <button class="btn-cell" onclick="installEnvironment()">点击安装</button>
+        </div>
+        <div class="env-cell">
+          <div class="env-icon runner-bg">🚀</div>
+          <div class="env-name">启动 Runner</div>
+          <div class="env-desc">启动主程序</div>
+          <div class="env-desc">&nbsp;</div>
+          <button class="btn-cell" onclick="startRunner()">点击启动</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quota Section -->
+    <section class="quota-compact-section">
+      <div class="section-header-inline">
+        <h2>📊 额度余量</h2>
+        <button class="btn-check-small" onclick="refreshQuota()">刷新额度</button>
+      </div>
+      
+      <!-- Codex Quota -->
+      <div class="quota-compact-card" id="codexQuotaCard" style="display: none;">
+        <div class="quota-compact-header">
+          <div class="quota-tool-info">
+            <span class="quota-icon">🤖</span>
+            <span class="quota-name">Codex</span>
+          </div>
+          <span class="quota-badge" id="codexQuotaBadge">未检测</span>
+        </div>
+        <div class="quota-bars-compact">
+          <div class="quota-row">
+            <span class="quota-label">5h</span>
+            <div class="progress-bar-compact">
+              <div class="progress-fill-compact" id="codex5hBar"></div>
+            </div>
+            <span class="quota-text" id="codex5hText">--% 剩余 · --% 已用</span>
+          </div>
+          <div class="quota-row">
+            <span class="quota-label">7d</span>
+            <div class="progress-bar-compact">
+              <div class="progress-fill-compact" id="codex7dBar"></div>
+            </div>
+            <span class="quota-text" id="codex7dText">--% 剩余 · --% 已用</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Claude Quota -->
+      <div class="quota-compact-card" id="claudeQuotaCard" style="display: none;">
+        <div class="quota-compact-header">
+          <div class="quota-tool-info">
+            <span class="quota-icon">🔶</span>
+            <span class="quota-name">Claude Code</span>
+          </div>
+          <span class="quota-badge" id="claudeQuotaBadge">未检测</span>
+        </div>
+        <div class="quota-bars-compact">
+          <div class="quota-row">
+            <span class="quota-label">5h</span>
+            <div class="progress-bar-compact">
+              <div class="progress-fill-compact" id="claude5hBar"></div>
+            </div>
+            <span class="quota-text" id="claude5hText">--% 剩余 · --% 已用</span>
+          </div>
+          <div class="quota-row">
+            <span class="quota-label">7d</span>
+            <div class="progress-bar-compact">
+              <div class="progress-fill-compact" id="claude7dBar"></div>
+            </div>
+            <span class="quota-text" id="claude7dText">--% 剩余 · --% 已用</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Account Management -->
+    <section class="account-compact-section">
+      <div class="account-inline">
+        <h2>👥 账号管理</h2>
+        <div class="account-controls">
+          <span class="account-current">当前槽位: <strong id="currentSlot">--</strong></span>
+          <button class="btn-account" onclick="refreshSlots()">刷新槽位</button>
+          <button class="btn-account" onclick="manageSlots()">切换槽位</button>
+          <button class="btn-account" onclick="saveSlot()">保存槽位</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Log Section -->
+    <section class="log-compact-section">
+      <h2>📝 操作日志</h2>
+      <div class="log-container-compact" id="logContainer">
+        <div class="log-entry">欢迎使用 AgentLab Runner 控制面板</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="app-v2.js"></script>
+</body>
+</html>

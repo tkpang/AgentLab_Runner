@@ -8,6 +8,7 @@ $startScript = Join-Path $scriptDir "start-runner.ps1"
 $shellScript = Join-Path $scriptDir "runner-shell.ps1"
 $verifyScript = Join-Path $scriptDir "verify-windows.ps1"
 $authStatusScript = Join-Path $scriptDir "auth-status-windows.ps1"
+$authStatusGuiScript = Join-Path $scriptDir "check-auth-status-gui.ps1"
 $codexDeviceLoginScript = Join-Path $scriptDir "login-codex-device.ps1"
 $claudeGuideLoginScript = Join-Path $scriptDir "login-claude-guide.ps1"
 $uninstallScript = Join-Path $scriptDir "uninstall-windows.ps1"
@@ -159,6 +160,24 @@ $btnCopyCodexUrl.Location = New-Object System.Drawing.Point(588, 35)
 $btnCopyCodexUrl.Size = New-Object System.Drawing.Size(170, 28)
 $btnCopyCodexUrl.Enabled = $false
 $groupLogin.Controls.Add($btnCopyCodexUrl)
+
+$lblCodexStatus = New-Object System.Windows.Forms.Label
+$lblCodexStatus.Text = "Codex: 未检查"
+$lblCodexStatus.Location = New-Object System.Drawing.Point(768, 35)
+$lblCodexStatus.Size = New-Object System.Drawing.Size(120, 28)
+$lblCodexStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblCodexStatus.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$lblCodexStatus.BackColor = [System.Drawing.Color]::LightGray
+$groupLogin.Controls.Add($lblCodexStatus)
+
+$lblClaudeStatus = New-Object System.Windows.Forms.Label
+$lblClaudeStatus.Text = "Claude: 未检查"
+$lblClaudeStatus.Location = New-Object System.Drawing.Point(768, 68)
+$lblClaudeStatus.Size = New-Object System.Drawing.Size(120, 28)
+$lblClaudeStatus.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$lblClaudeStatus.BorderStyle = [System.Windows.Forms.BorderStyle]::FixedSingle
+$lblClaudeStatus.BackColor = [System.Drawing.Color]::LightGray
+$groupLogin.Controls.Add($lblClaudeStatus)
 
 $lblSlots = New-Object System.Windows.Forms.Label
 $lblSlots.Text = "Account Slots:"
@@ -387,6 +406,7 @@ $script:codexAuthPopupShown = $false
 $script:quotaState = $null
 $script:envState = @{ node = $false; codex = $false; claude = $false }
 $script:envPaths = @{ node = ""; codex = ""; claude = "" }
+$script:authState = @{ codex = @{ loggedIn = $false; status = "未检查" }; claude = @{ loggedIn = $false; status = "未检查" } }
 
 function T([string]$k) {
   if ($script:lang -eq "en") {
@@ -817,8 +837,110 @@ function Update-ActiveSlotLabel() {
   }
 }
 
+function Update-AuthStatusLabels() {
+  # 更新 Codex 状态标签
+  $codexStatus = $script:authState.codex.status
+  $codexLoggedIn = $script:authState.codex.loggedIn
+  
+  if ($codexLoggedIn) {
+    $lblCodexStatus.Text = "Codex: " + $codexStatus
+    $lblCodexStatus.BackColor = [System.Drawing.Color]::FromArgb(22, 101, 52)
+    $lblCodexStatus.ForeColor = [System.Drawing.Color]::White
+  } elseif ($codexStatus -eq "未安装") {
+    $lblCodexStatus.Text = "Codex: " + $codexStatus
+    $lblCodexStatus.BackColor = [System.Drawing.Color]::LightGray
+    $lblCodexStatus.ForeColor = [System.Drawing.Color]::Black
+  } else {
+    $lblCodexStatus.Text = "Codex: " + $codexStatus
+    $lblCodexStatus.BackColor = [System.Drawing.Color]::FromArgb(127, 29, 29)
+    $lblCodexStatus.ForeColor = [System.Drawing.Color]::White
+  }
+  
+  # 更新 Claude 状态标签
+  $claudeStatus = $script:authState.claude.status
+  $claudeLoggedIn = $script:authState.claude.loggedIn
+  
+  if ($claudeLoggedIn) {
+    $lblClaudeStatus.Text = "Claude: " + $claudeStatus
+    $lblClaudeStatus.BackColor = [System.Drawing.Color]::FromArgb(22, 101, 52)
+    $lblClaudeStatus.ForeColor = [System.Drawing.Color]::White
+  } elseif ($claudeStatus -eq "未安装") {
+    $lblClaudeStatus.Text = "Claude: " + $claudeStatus
+    $lblClaudeStatus.BackColor = [System.Drawing.Color]::LightGray
+    $lblClaudeStatus.ForeColor = [System.Drawing.Color]::Black
+  } else {
+    $lblClaudeStatus.Text = "Claude: " + $claudeStatus
+    $lblClaudeStatus.BackColor = [System.Drawing.Color]::FromArgb(127, 29, 29)
+    $lblClaudeStatus.ForeColor = [System.Drawing.Color]::White
+  }
+}
+
+function Refresh-AuthStatus() {
+  try {
+    $raw = & $authStatusGuiScript -Json 2>&1 | Out-String
+    if ([string]::IsNullOrWhiteSpace($raw)) {
+      throw "空响应"
+    }
+    
+    # 提取 JSON 部分
+    $jsonText = ""
+    $trimmedRaw = $raw.Trim()
+    if ($trimmedRaw.StartsWith("{")) {
+      $jsonText = $trimmedRaw
+    } else {
+      $lines = $raw -split "`r?`n"
+      foreach ($line in $lines) {
+        $t = $line.Trim()
+        if ($t.StartsWith("{")) {
+          $jsonText = $t
+          break
+        }
+      }
+    }
+    
+    if ([string]::IsNullOrWhiteSpace($jsonText)) {
+      throw "无法解析 JSON"
+    }
+    
+    $result = $jsonText | ConvertFrom-Json
+    
+    if ($result.ok) {
+      $script:authState.codex = @{
+        loggedIn = $result.codex.loggedIn
+        status = $result.codex.status
+        email = $result.codex.email
+      }
+      $script:authState.claude = @{
+        loggedIn = $result.claude.loggedIn
+        status = $result.claude.status
+        email = $result.claude.email
+      }
+      
+      Update-AuthStatusLabels
+      
+      # 记录日志
+      $codexMsg = "Codex: " + $result.codex.status
+      if ($result.codex.email) { $codexMsg += " (" + $result.codex.email + ")" }
+      $claudeMsg = "Claude: " + $result.claude.status
+      if ($result.claude.email) { $claudeMsg += " (" + $result.claude.email + ")" }
+      
+      Add-Log $codexMsg
+      Add-Log $claudeMsg
+    }
+  }
+  catch {
+    Add-Log ("检查登录状态失败: " + $_.Exception.Message)
+  }
+}
+
 function Set-QuotaUnavailable([string]$message = "") {
   $msg = if ([string]::IsNullOrWhiteSpace($message)) { T "quota_unavailable" } else { $message }
+  
+  # 检测是否是 Windows 子进程错误
+  if ($msg -match "child_process|EPERM|EACCES|permission") {
+    $msg = "Windows 环境限制，无法自动获取额度。请在终端运行 'codex' 查看额度。"
+  }
+  
   $lblQuotaAccount.Text = (T "quota_account") + " " + $msg
   $lblQuotaPlan.Text = (T "quota_plan") + " " + (T "quota_unknown")
   $lblQuotaRefreshed.Text = (T "quota_refreshed") + " " + (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
@@ -1200,7 +1322,7 @@ $btnUninstall.Add_Click({
 })
 
 $btnAuthStatus.Add_Click({
-  Start-BackgroundScript (T "task_check_login") $authStatusScript @()
+  Refresh-AuthStatus
 })
 
 $btnRefreshSlots.Add_Click({
@@ -1360,4 +1482,5 @@ Refresh-EnvironmentIndicators $false
 Add-Log (LT "log_runner_root" @($runnerRoot))
 Add-Log((T "log_tip"))
 Refresh-SlotList ""
+Refresh-AuthStatus
 [void]$form.ShowDialog()

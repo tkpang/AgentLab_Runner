@@ -95,7 +95,14 @@ function Inspect-CodexAuth([string]$authPath) {
   if (-not $result.exists) { return $result }
   $obj = Read-JsonFileSafe $authPath
   if ($null -eq $obj) { return $result }
-  $result.hasToken = Has-TokenValue $obj
+  
+  # 检查 Codex 特定的 tokens 结构
+  if ($obj.tokens -and ($obj.tokens.access_token -or $obj.tokens.id_token)) {
+    $result.hasToken = $true
+  } else {
+    $result.hasToken = Has-TokenValue $obj
+  }
+  
   $result.email = Find-EmailValue $obj
   return $result
 }
@@ -132,25 +139,30 @@ else {
   $codexAuthPath = Join-Path $homeDir ".codex/auth.json"
   $codexAuth = Inspect-CodexAuth $codexAuthPath
 
-  $codexProbe = Invoke-Probe "codex" @("whoami")
-  if ($codexProbe.ok -and -not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
-    Write-Host "status: logged in (probe: codex whoami)"
-    Write-Host ("detail: " + (Short-Text $codexProbe.text))
+  # 优先检查凭证文件，避免 GUI 环境中的 stdin 错误
+  if ($codexAuth.exists -and $codexAuth.hasToken) {
+    Write-Host "status: logged in (credential file verified)"
+    if (-not [string]::IsNullOrWhiteSpace($codexAuth.email)) {
+      Write-Host ("account: " + $codexAuth.email)
+    }
+    # 尝试获取更多信息，但不依赖其结果
+    $codexProbe = Invoke-Probe "codex" @("whoami")
+    if ($codexProbe.ok -and -not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
+      Write-Host ("detail: " + (Short-Text $codexProbe.text))
+    }
   }
   else {
-    $fallback = Invoke-Probe "codex" @("auth", "status")
-    if ($fallback.ok -and -not [string]::IsNullOrWhiteSpace($fallback.text)) {
-      Write-Host "status: maybe logged in (probe: codex auth status)"
-      Write-Host ("detail: " + (Short-Text $fallback.text))
+    # 凭证文件不存在或无效，尝试命令行探测
+    $codexProbe = Invoke-Probe "codex" @("whoami")
+    if ($codexProbe.ok -and -not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
+      Write-Host "status: logged in (probe: codex whoami)"
+      Write-Host ("detail: " + (Short-Text $codexProbe.text))
     }
     else {
-      if ($codexAuth.exists -and $codexAuth.hasToken) {
-        Write-Host "status: logged in (local credential file detected)"
-        $detail = "CLI status probe may require terminal. whoami/auth-status output: " + (Short-Text ($codexProbe.text + " " + $fallback.text))
-        Write-Host ("detail: " + (Short-Text $detail))
-        if (-not [string]::IsNullOrWhiteSpace($codexAuth.email)) {
-          Write-Host ("account: " + $codexAuth.email)
-        }
+      $fallback = Invoke-Probe "codex" @("auth", "status")
+      if ($fallback.ok -and -not [string]::IsNullOrWhiteSpace($fallback.text)) {
+        Write-Host "status: maybe logged in (probe: codex auth status)"
+        Write-Host ("detail: " + (Short-Text $fallback.text))
       }
       else {
         $msg = ($codexProbe.text + " " + $fallback.text).ToLowerInvariant()
@@ -160,9 +172,7 @@ else {
         else {
           Write-Host "status: unknown (run codex login to ensure auth)"
         }
-        if (-not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
-          Write-Host ("detail: " + (Short-Text $codexProbe.text))
-        }
+        Write-Host ("detail: " + (Short-Text ($codexProbe.text + " " + $fallback.text)))
       }
     }
   }

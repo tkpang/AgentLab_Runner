@@ -131,7 +131,12 @@ proc.on("error", (err) => {
   finish({ ok: false, error: String(err?.message || err) }, 1);
 });
 
-proc.stderr.on("data", () => {});
+proc.stderr.on("data", (chunk) => {
+  const errText = chunk.toString();
+  if (errText.includes("child_process") || errText.includes("EPERM") || errText.includes("EACCES")) {
+    finish({ ok: false, error: "Windows permission issue with codex app-server. Try running codex directly in terminal." }, 1);
+  }
+});
 
 proc.stdout.on("data", (chunk) => {
   buffer += chunk.toString();
@@ -254,9 +259,17 @@ Set-Location $runnerRoot
 
 try {
   $identityInfo = Parse-CodexIdentity $homeDir
+  
+  # 检查凭证文件是否存在
+  $authPath = Join-Path $homeDir ".codex/auth.json"
+  $hasCredential = Test-Path $authPath
+  
   $probe = Invoke-CodexRateLimits
   if (-not $probe.ok) {
     $errMsg = if ($probe.error) { [string]$probe.error } else { "unknown probe error" }
+    if ($hasCredential) {
+      $errMsg = "Credential file exists but cannot fetch quota. " + $errMsg + " (Hint: credential may be expired, try re-login)"
+    }
     throw $errMsg
   }
   $rl = $probe.data.rateLimits
