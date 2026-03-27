@@ -326,13 +326,19 @@ $groupLog.Location = New-Object System.Drawing.Point(20, 680)
 $groupLog.Size = New-Object System.Drawing.Size(900, 180)
 $form.Controls.Add($groupLog)
 
+$btnCopyLogs = New-Object System.Windows.Forms.Button
+$btnCopyLogs.Text = "Copy Logs"
+$btnCopyLogs.Location = New-Object System.Drawing.Point(760, 20)
+$btnCopyLogs.Size = New-Object System.Drawing.Size(124, 26)
+$groupLog.Controls.Add($btnCopyLogs)
+
 $tbLog = New-Object System.Windows.Forms.TextBox
 $tbLog.Multiline = $true
 $tbLog.ReadOnly = $true
 $tbLog.ScrollBars = "Vertical"
 $tbLog.Font = New-Object System.Drawing.Font("Consolas", 9)
-$tbLog.Location = New-Object System.Drawing.Point(16, 24)
-$tbLog.Size = New-Object System.Drawing.Size(868, 140)
+$tbLog.Location = New-Object System.Drawing.Point(16, 52)
+$tbLog.Size = New-Object System.Drawing.Size(868, 112)
 $groupLog.Controls.Add($tbLog)
 
 $progressInstall = New-Object System.Windows.Forms.ProgressBar
@@ -430,6 +436,7 @@ function T([string]$k) {
       "quota_loading" { return "Refreshing quota..." }
       "quota_reset" { return "reset" }
       "group_logs" { return "Logs" }
+      "btn_copy_logs" { return "Copy Logs" }
       "ready" { return "Ready" }
       "task_install_env" { return "Installing environment..." }
       "task_uninstall_env" { return "Uninstalling selected tools..." }
@@ -490,6 +497,8 @@ function T([string]$k) {
       "log_install_selection" { return "Install selection => Codex={0}, Claude={1}, CNMirror={2}" }
       "log_codex_login_url" { return "Codex login URL: {0}" }
       "log_copied_codex_url" { return "Copied Codex login URL to clipboard." }
+      "log_copied_logs" { return "Copied logs to clipboard." }
+      "log_copy_logs_failed" { return "Copy logs failed: {0}" }
       default { return $k }
     }
   }
@@ -541,6 +550,7 @@ function T([string]$k) {
     "quota_loading" { return "正在刷新额度..." }
     "quota_reset" { return "重置" }
     "group_logs" { return "日志" }
+    "btn_copy_logs" { return "复制日志" }
     "ready" { return "就绪" }
     "task_install_env" { return "正在安装环境..." }
     "task_uninstall_env" { return "正在卸载所选工具..." }
@@ -601,6 +611,8 @@ function T([string]$k) {
     "log_install_selection" { return "安装选择 => Codex={0}，Claude={1}，国内镜像={2}" }
     "log_codex_login_url" { return "Codex 登录链接：{0}" }
     "log_copied_codex_url" { return "已复制 Codex 登录链接到剪贴板。" }
+    "log_copied_logs" { return "已复制日志到剪贴板。" }
+    "log_copy_logs_failed" { return "复制日志失败：{0}" }
     default { return $k }
   }
 }
@@ -888,6 +900,7 @@ function Apply-Language() {
   $groupQuota.Text = T "group_quota"
   $btnQuotaRefresh.Text = T "btn_quota_refresh"
   $groupLog.Text = T "group_logs"
+  $btnCopyLogs.Text = T "btn_copy_logs"
   if ($status.Text -eq "Ready" -or $status.Text -eq "就绪") {
     $status.Text = T "ready"
   }
@@ -1270,6 +1283,15 @@ $btnCopyCodexUrl.Add_Click({
     Add-Log (T "log_copied_codex_url")
   } catch {
     Add-Log("Clipboard copy failed: $($_.Exception.Message)")
+  }
+})
+
+$btnCopyLogs.Add_Click({
+  try {
+    [System.Windows.Forms.Clipboard]::SetText($tbLog.Text)
+    Add-Log (T "log_copied_logs")
+  } catch {
+    Add-Log (LT "log_copy_logs_failed" @($_.Exception.Message))
   }
 })
 

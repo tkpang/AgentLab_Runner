@@ -3,6 +3,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+if (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue) {
+  $script:PSNativeCommandUseErrorActionPreference = $false
+}
 
 function Add-PathOnce([string]$path) {
   if ([string]::IsNullOrWhiteSpace($path)) { return }
@@ -159,8 +162,15 @@ try {
     Emit-AuthUpdate
   }
 } catch {
-  Write-Host ("[login] codex login failed: " + $_.Exception.Message) -ForegroundColor Red
-  exit 1
+  $em = ""
+  try { $em = [string]$_.Exception.Message } catch {}
+  $normalized = $em.ToLowerInvariant()
+  if ($normalized.Contains("successfully logged in") -or $normalized.Contains("already logged in")) {
+    Write-Output ("[login] codex returned completion message: " + $em)
+  } else {
+    Write-Host ("[login] codex login failed: " + $em) -ForegroundColor Red
+    exit 1
+  }
 }
 
 $allText = Strip-Ansi ($rawLines -join "`n")

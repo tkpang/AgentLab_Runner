@@ -26,6 +26,80 @@ function Invoke-Probe([string]$command, [string[]]$arguments) {
   }
 }
 
+function Read-JsonFileSafe([string]$path) {
+  try {
+    if (-not (Test-Path $path)) { return $null }
+    $raw = Get-Content -Path $path -Raw
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+    return $raw | ConvertFrom-Json
+  }
+  catch {
+    return $null
+  }
+}
+
+function Find-EmailValue($obj) {
+  if ($null -eq $obj) { return "" }
+  if ($obj -is [string]) { return "" }
+  if ($obj -is [System.Collections.IDictionary]) {
+    foreach ($k in $obj.Keys) {
+      $keyName = [string]$k
+      $v = $obj[$k]
+      if ($keyName -ieq "email" -and $v -is [string] -and -not [string]::IsNullOrWhiteSpace($v)) {
+        return $v
+      }
+      $nested = Find-EmailValue $v
+      if (-not [string]::IsNullOrWhiteSpace($nested)) { return $nested }
+    }
+    return ""
+  }
+  if ($obj -is [System.Collections.IEnumerable] -and -not ($obj -is [string])) {
+    foreach ($item in $obj) {
+      $nested = Find-EmailValue $item
+      if (-not [string]::IsNullOrWhiteSpace($nested)) { return $nested }
+    }
+    return ""
+  }
+  return ""
+}
+
+function Has-TokenValue($obj) {
+  if ($null -eq $obj) { return $false }
+  if ($obj -is [string]) { return $false }
+  if ($obj -is [System.Collections.IDictionary]) {
+    foreach ($k in $obj.Keys) {
+      $keyName = ([string]$k).ToLowerInvariant()
+      $v = $obj[$k]
+      if (($keyName -match "token" -or $keyName -match "key") -and $v -is [string] -and -not [string]::IsNullOrWhiteSpace($v)) {
+        return $true
+      }
+      if (Has-TokenValue $v) { return $true }
+    }
+    return $false
+  }
+  if ($obj -is [System.Collections.IEnumerable] -and -not ($obj -is [string])) {
+    foreach ($item in $obj) {
+      if (Has-TokenValue $item) { return $true }
+    }
+    return $false
+  }
+  return $false
+}
+
+function Inspect-CodexAuth([string]$authPath) {
+  $result = @{
+    exists = (Test-Path $authPath)
+    hasToken = $false
+    email = ""
+  }
+  if (-not $result.exists) { return $result }
+  $obj = Read-JsonFileSafe $authPath
+  if ($null -eq $obj) { return $result }
+  $result.hasToken = Has-TokenValue $obj
+  $result.email = Find-EmailValue $obj
+  return $result
+}
+
 function Short-Text([string]$text, [int]$maxLen = 220) {
   if ([string]::IsNullOrWhiteSpace($text)) { return "" }
   $flat = ($text -replace "\r", " " -replace "\n", " ").Trim()
@@ -55,6 +129,8 @@ if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
 else {
   $codexVersion = Invoke-Probe "codex" @("--version")
   Write-Host ("version: " + (Short-Text $codexVersion.text))
+  $codexAuthPath = Join-Path $homeDir ".codex/auth.json"
+  $codexAuth = Inspect-CodexAuth $codexAuthPath
 
   $codexProbe = Invoke-Probe "codex" @("whoami")
   if ($codexProbe.ok -and -not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
@@ -68,15 +144,25 @@ else {
       Write-Host ("detail: " + (Short-Text $fallback.text))
     }
     else {
-      $msg = ($codexProbe.text + " " + $fallback.text).ToLowerInvariant()
-      if ($msg.Contains("login") -or $msg.Contains("not") -or $msg.Contains("unauth")) {
-        Write-Host "status: not logged in (please run: codex login)"
+      if ($codexAuth.exists -and $codexAuth.hasToken) {
+        Write-Host "status: logged in (local credential file detected)"
+        $detail = "CLI status probe may require terminal. whoami/auth-status output: " + (Short-Text ($codexProbe.text + " " + $fallback.text))
+        Write-Host ("detail: " + (Short-Text $detail))
+        if (-not [string]::IsNullOrWhiteSpace($codexAuth.email)) {
+          Write-Host ("account: " + $codexAuth.email)
+        }
       }
       else {
-        Write-Host "status: unknown (run codex login to ensure auth)"
-      }
-      if (-not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
-        Write-Host ("detail: " + (Short-Text $codexProbe.text))
+        $msg = ($codexProbe.text + " " + $fallback.text).ToLowerInvariant()
+        if ($msg.Contains("login") -or $msg.Contains("not") -or $msg.Contains("unauth")) {
+          Write-Host "status: not logged in (please run: codex login)"
+        }
+        else {
+          Write-Host "status: unknown (run codex login to ensure auth)"
+        }
+        if (-not [string]::IsNullOrWhiteSpace($codexProbe.text)) {
+          Write-Host ("detail: " + (Short-Text $codexProbe.text))
+        }
       }
     }
   }

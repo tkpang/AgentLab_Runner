@@ -92,17 +92,25 @@ function Invoke-CodexRateLimits() {
   if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "node not found"
   }
-  if (-not (Get-Command codex -ErrorAction SilentlyContinue)) {
+  $codexCmd = Get-Command codex -ErrorAction SilentlyContinue
+  if (-not $codexCmd) {
     throw "codex not installed"
   }
+  $codexPath = ""
+  try {
+    $codexPath = [string]$codexCmd.Source
+    if ([string]::IsNullOrWhiteSpace($codexPath)) { $codexPath = [string]$codexCmd.Path }
+  } catch {}
+  if ([string]::IsNullOrWhiteSpace($codexPath)) { $codexPath = "codex" }
 
   $tmpJs = Join-Path ([System.IO.Path]::GetTempPath()) ("agentlab-codex-rate-" + [Guid]::NewGuid().ToString("N") + ".mjs")
   $js = @'
 import { spawn } from "node:child_process";
 
+const codexBin = process.env.AGENTLAB_CODEX_PATH || "codex";
 const initId = "init-1";
 const rateId = "rate-1";
-const proc = spawn("codex", ["app-server"], { stdio: ["pipe", "pipe", "pipe"] });
+const proc = spawn(codexBin, ["app-server"], { stdio: ["pipe", "pipe", "pipe"] });
 let buffer = "";
 let done = false;
 
@@ -168,8 +176,10 @@ setTimeout(() => {
 }, 15000);
 '@
 
+  $oldCodexPathEnv = $env:AGENTLAB_CODEX_PATH
   try {
     Set-Content -Path $tmpJs -Value $js -Encoding UTF8
+    $env:AGENTLAB_CODEX_PATH = $codexPath
     $raw = (& node $tmpJs 2>&1 | Out-String).Trim()
     if ([string]::IsNullOrWhiteSpace($raw)) {
       throw "empty response from codex app-server probe"
@@ -178,6 +188,11 @@ setTimeout(() => {
     return $obj
   }
   finally {
+    if ($null -eq $oldCodexPathEnv) {
+      Remove-Item Env:AGENTLAB_CODEX_PATH -ErrorAction SilentlyContinue
+    } else {
+      $env:AGENTLAB_CODEX_PATH = $oldCodexPathEnv
+    }
     Remove-Item -Path $tmpJs -Force -ErrorAction SilentlyContinue
   }
 }
