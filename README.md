@@ -93,6 +93,36 @@ Windows（双击方式）:
 scripts\start-runner.cmd
 ```
 
+推荐（统一生命周期脚本，自动管理 Web GUI + Runner PID/日志）:
+
+Linux / macOS:
+
+```bash
+RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" ./start.sh
+./stop.sh
+./restart.sh
+```
+
+Windows:
+
+```powershell
+.\start.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx"
+.\stop.ps1
+.\restart.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx"
+```
+
+默认 `start.ps1` 使用 `desktop` 模式（Electron 独立窗口 + 系统托盘，可再次唤出）。
+若你要强制浏览器模式，可显式指定：
+
+```powershell
+.\start.ps1 -Server "http://127.0.0.1:3200" -Token "xxxx" -GuiMode web
+```
+
+说明：
+- 脚本会写入 `.run/runner.pid`、`.run/gui.pid`。
+- 日志在 `.run/runner.log`、`.run/gui.log`。
+- 如果未提供 `RUNNER_TOKEN`，会只启动 GUI，不会启动 runner daemon。
+
 GUI 安装器支持：
 - 勾选安装 Codex / Claude
 - 勾选中国镜像加速
@@ -110,6 +140,18 @@ GUI 安装器支持：
 备注：Claude 登录是可选项。没有 Claude 账号也可以只使用 Codex 运行。
 
 说明：当前“余量查询”基于 Codex app-server 的 `account/rateLimits/read` 接口实现。
+
+## GUI 结构（v2）
+
+当前 `gui/` 已按功能拆分，便于和 AgentLab 主站共用逻辑：
+
+- `app-v2.js`: 页面编排与事件绑定
+- `modules/api.js`: API 请求封装
+- `modules/log.js`: 日志渲染
+- `modules/env.js`: 环境检测与状态渲染
+- `modules/quota.js`: 额度信息渲染
+- `modules/slots.js`: 多账号槽位管理
+- `styles-v2.css`: 统一主题变量（暗色 token）
 
 账号槽位说明：
 - 槽位数据保存在 `runner/.accounts/windows/<slot>/`

@@ -3,6 +3,7 @@ import { apiGet, apiPost } from './api.js';
 let cachedSlots = [];
 let cachedActiveSlot = '--';
 let slotHintMessage = '槽位用于保存“本机 CLI 登录态快照”，可在多账号之间快速切换。';
+let lastHintLogMessage = '';
 
 function slotModalElements() {
   return {
@@ -98,30 +99,20 @@ export async function refreshSlots(addLog) {
     cachedActiveSlot = data.activeSlot || '--';
     const current = document.getElementById('currentSlot');
     if (current) current.textContent = cachedActiveSlot;
-    const manageBtn = document.querySelector('button[onclick="manageSlots()"]');
 
     if (data.message) {
       slotHintMessage = data.message;
-      if (manageBtn instanceof HTMLButtonElement) {
-        manageBtn.disabled = true;
-        manageBtn.title = data.message;
-        manageBtn.style.opacity = '0.5';
-        manageBtn.style.cursor = 'not-allowed';
+      if (lastHintLogMessage !== data.message) {
+        addLog(data.message, 'warning');
+        lastHintLogMessage = data.message;
       }
     } else {
       slotHintMessage = '槽位用于保存“本机 CLI 登录态快照”，可在多账号之间快速切换。';
-      if (manageBtn instanceof HTMLButtonElement) {
-        manageBtn.disabled = false;
-        manageBtn.title = '';
-        manageBtn.style.opacity = '';
-        manageBtn.style.cursor = '';
-      }
+      lastHintLogMessage = '';
     }
     updateSlotHint();
 
-    if (data.message) {
-      addLog(data.message, 'warning');
-    } else {
+    if (!data.message) {
       addLog(`当前槽位: ${cachedActiveSlot}`, 'success');
     }
     return data;
@@ -129,6 +120,14 @@ export async function refreshSlots(addLog) {
     addLog(`刷新槽位失败: ${error.message}`, 'error');
     return null;
   }
+}
+
+export function getSlotSnapshot() {
+  return {
+    slots: cachedSlots.slice(),
+    activeSlot: cachedActiveSlot,
+    hint: slotHintMessage,
+  };
 }
 
 export async function activateSlot(slotName, addLog, onAfterSwitch = null) {

@@ -17,7 +17,7 @@ export function addLog(message, type = 'info') {
   container.appendChild(entry);
   container.scrollTop = container.scrollHeight;
 
-  while (container.children.length > 50) {
+  while (container.children.length > 300) {
     container.removeChild(container.firstChild);
   }
 }

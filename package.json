@@ -7,7 +7,10 @@
   "scripts": {
     "start": "tsx src/agentlab-runner.ts",
     "start:linux": "bash ./scripts/start-runner.sh",
-    "start:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/start-runner.ps1"
+    "start:windows": "powershell -ExecutionPolicy Bypass -File ./scripts/start-runner.ps1",
+    "runner:start": "bash ./start.sh",
+    "runner:stop": "bash ./stop.sh",
+    "runner:restart": "bash ./restart.sh"
   },
   "dependencies": {
     "@agentlab/runner": "file:",

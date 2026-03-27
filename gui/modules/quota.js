@@ -42,6 +42,9 @@ function updateQuotaTool(tool, data) {
     if (data.quotaSupported) {
       badge.textContent = '可查询';
       badge.className = 'quota-badge available';
+    } else if (data.error) {
+      badge.textContent = '刷新失败';
+      badge.className = 'quota-badge unavailable';
     } else {
       badge.textContent = '暂不支持';
       badge.className = 'quota-badge unavailable';
@@ -63,16 +66,14 @@ export async function refreshQuota(addLog) {
 
     updateQuotaTool('codex', data.codex);
     updateQuotaTool('claude', data.claude);
-    const codexCard = document.getElementById('codexQuotaCard');
-    const claudeCard = document.getElementById('claudeQuotaCard');
-    const emptyHint = document.getElementById('quotaEmptyHint');
-    if (emptyHint) {
-      const hasVisibleCard = (codexCard && codexCard.style.display !== 'none')
-        || (claudeCard && claudeCard.style.display !== 'none');
-      emptyHint.style.display = hasVisibleCard ? 'none' : 'block';
-    }
     if (data.warning) {
       addLog(`额度提示: ${data.warning}`, 'warning');
+    }
+    if (data?.codex?.error) {
+      addLog(`Codex 额度: ${data.codex.error}`, 'warning');
+    }
+    if (data?.claude?.error) {
+      addLog(`Claude 额度: ${data.claude.error}`, 'warning');
     }
     addLog('额度信息刷新成功', 'success');
     return data;

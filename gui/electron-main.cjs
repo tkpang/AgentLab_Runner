@@ -1,5 +1,5 @@
 // Electron Main Process - Desktop App Wrapper
-const { app, BrowserWindow, Tray, Menu, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 
@@ -8,12 +8,33 @@ let tray = null;
 let serverProcess = null;
 const SERVER_PORT = 8765;
 
+function createBrandIcon(size = 256) {
+  const safeSize = Math.max(16, Number(size) || 256);
+  const svg = `
+  <svg xmlns="http://www.w3.org/2000/svg" width="${safeSize}" height="${safeSize}" viewBox="0 0 128 128">
+    <defs>
+      <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#34f5d0"/>
+        <stop offset="100%" stop-color="#22d3ee"/>
+      </linearGradient>
+    </defs>
+    <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#g)"/>
+    <text x="64" y="84" text-anchor="middle" font-size="72" font-family="Arial,sans-serif" font-weight="700" fill="#06283b">A</text>
+  </svg>`;
+  const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+  return nativeImage.createFromDataURL(dataUrl);
+}
+
 // Start backend server
 function startBackendServer() {
   const serverScript = path.join(__dirname, 'server.cjs');
   serverProcess = spawn('node', [serverScript], {
     cwd: __dirname,
-    stdio: 'inherit'
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      AGENTLAB_RUNNER_NO_BROWSER: '1',
+    },
   });
 
   serverProcess.on('error', (err) => {
@@ -29,7 +50,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 650,
     title: 'AgentLab Runner',
-    icon: path.join(__dirname, 'icon.png'),
+    icon: createBrandIcon(256),
     backgroundColor: '#0f172a',
     webPreferences: {
       nodeIntegration: false,
@@ -70,10 +91,7 @@ function createWindow() {
 
 // Create system tray
 function createTray() {
-  // Use a simple icon (you can replace with a proper .ico file)
-  const trayIcon = path.join(__dirname, 'tray-icon.png');
-  
-  tray = new Tray(trayIcon);
+  tray = new Tray(createBrandIcon(32));
   
   const contextMenu = Menu.buildFromTemplate([
     {

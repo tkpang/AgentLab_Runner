@@ -9,6 +9,10 @@ const PORT = Number(process.env.AGENTLAB_GUI_PORT || 8765);
 const GUI_DIR = __dirname;
 const ROOT_DIR = path.join(__dirname, '..');
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
+const RUN_DIR = path.join(ROOT_DIR, '.run');
+const RUNNER_CONFIG_PATH = path.join(RUN_DIR, 'runner-config.json');
+const RUNNER_LOG_PATH = path.join(RUN_DIR, 'runner.log');
+const RUNNER_ERR_LOG_PATH = path.join(RUN_DIR, 'runner.err.log');
 const IS_WIN = process.platform === 'win32';
 const RUNNER_BIN_PATHS = [
   path.join(ROOT_DIR, '.runtime', 'node', 'current'),
@@ -35,6 +39,51 @@ function exists(filePath) {
   } catch {
     return false;
   }
+}
+
+function ensureDir(dirPath) {
+  try {
+    fs.mkdirSync(dirPath, { recursive: true });
+  } catch {
+    // ignore
+  }
+}
+
+function defaultRunnerConfig() {
+  return {
+    server: String(process.env.RUNNER_SERVER || 'http://127.0.0.1:3200').trim(),
+    token: String(process.env.RUNNER_TOKEN || '').trim(),
+    runnerId: String(process.env.RUNNER_ID || '').trim(),
+    autoStart: false,
+  };
+}
+
+function readRunnerConfig() {
+  const defaults = defaultRunnerConfig();
+  const raw = readJsonSafe(RUNNER_CONFIG_PATH);
+  if (!raw || typeof raw !== 'object') return defaults;
+  return {
+    server: typeof raw.server === 'string' && raw.server.trim() ? raw.server.trim() : defaults.server,
+    token: typeof raw.token === 'string' ? raw.token.trim() : defaults.token,
+    runnerId: typeof raw.runnerId === 'string' ? raw.runnerId.trim() : defaults.runnerId,
+    autoStart: typeof raw.autoStart === 'boolean' ? raw.autoStart : defaults.autoStart,
+  };
+}
+
+function saveRunnerConfig(input) {
+  ensureDir(RUN_DIR);
+  const server = typeof input?.server === 'string' ? input.server.trim() : '';
+  const token = typeof input?.token === 'string' ? input.token.trim() : '';
+  const runnerId = typeof input?.runnerId === 'string' ? input.runnerId.trim() : '';
+  const autoStart = typeof input?.autoStart === 'boolean' ? input.autoStart : readRunnerConfig().autoStart;
+  const next = {
+    server: server || defaultRunnerConfig().server,
+    token,
+    runnerId,
+    autoStart,
+  };
+  fs.writeFileSync(RUNNER_CONFIG_PATH, JSON.stringify(next, null, 2), 'utf8');
+  return next;
 }
 
 function buildRunnerEnv(extraEnv = {}) {
@@ -259,6 +308,124 @@ function extractRemainingPercent(bucket) {
   return Math.max(0, 100 - used);
 }
 
+function parsePercentFromUtilization(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value <= 1 ? normalizePercent(value * 100) : normalizePercent(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.endsWith('%') ? trimmed.slice(0, -1).trim() : trimmed;
+    const parsed = Number.parseFloat(normalized);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed <= 1 ? normalizePercent(parsed * 100) : normalizePercent(parsed);
+  }
+  return null;
+}
+
+function parseNonNegativeInt(value, fallback = 0) {
+  const num = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(num) || num < 0) return fallback;
+  return num;
+}
+
+function readClaudeOauthToken() {
+  const envToken = String(process.env.CLAUDE_CODE_OAUTH_TOKEN || '').trim();
+  if (envToken) return envToken;
+  const home = os.homedir();
+  const candidatePaths = [
+    path.join(home, '.claude', '.credentials.json'),
+    path.join(home, '.claude', 'credentials.json'),
+    path.join(home, '.claude', 'config.json'),
+    path.join(home, '.claude.json'),
+    path.join(home, '.config', 'claude', 'credentials.json'),
+  ];
+  for (const filePath of candidatePaths) {
+    const credentials = readJsonSafe(filePath);
+    if (!credentials) continue;
+    const nestedOauth = credentials && typeof credentials.claudeAiOauth === 'object' ? credentials.claudeAiOauth : null;
+    const nestedToken = nestedOauth && typeof nestedOauth.accessToken === 'string'
+      ? nestedOauth.accessToken.trim()
+      : '';
+    if (nestedToken) return nestedToken;
+    const flatToken = typeof credentials.accessToken === 'string' ? credentials.accessToken.trim() : '';
+    if (flatToken) return flatToken;
+    const fallbackToken = walkFind(credentials, (k, v) => {
+      if (typeof v !== 'string' || !v.trim()) return false;
+      const key = String(k || '').toLowerCase();
+      return key === 'accesstoken' || key === 'oauth_token' || key === 'oauthtoken';
+    });
+    if (typeof fallbackToken === 'string' && fallbackToken.trim()) {
+      return fallbackToken.trim();
+    }
+  }
+  return '';
+}
+
+async function requestClaudeOauthUsage(timeoutMs = 10000) {
+  const token = readClaudeOauthToken();
+  if (!token) throw new Error('未检测到 Claude OAuth token（CLAUDE_CODE_OAUTH_TOKEN 或 ~/.claude/.credentials.json）');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'Content-Type': 'application/json'
+      },
+      signal: controller.signal
+    });
+    const bodyText = await response.text();
+    let body = null;
+    try {
+      body = JSON.parse(bodyText);
+    } catch {
+      body = null;
+    }
+    if (!response.ok) {
+      const retryAfter = response.headers.get('retry-after');
+      const detail = String(bodyText || '').slice(0, 240);
+      throw new Error(`Claude usage 请求失败: HTTP ${response.status}${retryAfter ? `, Retry-After=${retryAfter}` : ''}${detail ? `, body=${detail}` : ''}`);
+    }
+    if (!body || typeof body !== 'object') {
+      throw new Error('Claude usage 返回体不是 JSON 对象');
+    }
+    return body;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Claude usage 请求超时（>${timeoutMs}ms）`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestClaudeOauthUsageWithRetry() {
+  try {
+    return await requestClaudeOauthUsage();
+  } catch (firstErr) {
+    const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    if (msg.includes('HTTP ')) throw firstErr;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return requestClaudeOauthUsage();
+  }
+}
+
+function parseClaudeUsageWindow(value) {
+  if (!value || typeof value !== 'object') return null;
+  const utilization = value.utilization ?? value.used_percentage ?? value.percent_used ?? value.usage;
+  const usedPercent = parsePercentFromUtilization(utilization);
+  if (usedPercent == null) return null;
+  return {
+    usedPercent,
+    remainingPercent: Math.max(0, 100 - usedPercent)
+  };
+}
+
 function parseCodexRateLimits(rateLimits) {
   if (!rateLimits || typeof rateLimits !== 'object') {
     return { quota5h: null, quota7d: null, quotaSupported: false };
@@ -385,7 +552,8 @@ async function quotaHandler() {
     loggedIn: Boolean(auth.codex.loggedIn),
     quota5h: null,
     quota7d: null,
-    quotaSupported: false
+    quotaSupported: false,
+    error: null,
   };
 
   const warnings = [];
@@ -433,17 +601,53 @@ async function quotaHandler() {
         codexQuota.quotaSupported = parsed.quotaSupported;
       } else if (probe.error) {
         warnings.push(probe.error);
+        codexQuota.error = probe.error;
       }
     }
   }
+  if (!codexQuota.installed) {
+    codexQuota.error = codexQuota.error || 'Codex 未安装';
+  } else if (!codexQuota.loggedIn) {
+    codexQuota.error = codexQuota.error || 'Codex 未登录';
+  } else if (!codexQuota.quotaSupported) {
+    codexQuota.error = codexQuota.error || 'Codex 当前无法读取额度';
+  }
 
+  const claudeOauthToken = readClaudeOauthToken();
   const claudeQuota = {
     installed: Boolean(auth.claude.installed),
-    loggedIn: Boolean(auth.claude.loggedIn),
+    loggedIn: Boolean(auth.claude.loggedIn || claudeOauthToken),
     quota5h: null,
     quota7d: null,
-    quotaSupported: false
+    quotaSupported: false,
+    error: null,
   };
+
+  if (claudeQuota.installed && claudeQuota.loggedIn) {
+    try {
+      const usage = await requestClaudeOauthUsageWithRetry();
+      const fiveHour = parseClaudeUsageWindow(usage?.five_hour);
+      const sevenDay = parseClaudeUsageWindow(usage?.seven_day);
+      claudeQuota.quota5h = fiveHour ? fiveHour.remainingPercent : null;
+      claudeQuota.quota7d = sevenDay ? sevenDay.remainingPercent : null;
+      claudeQuota.quotaSupported = claudeQuota.quota5h != null || claudeQuota.quota7d != null;
+      if (!claudeQuota.quotaSupported) {
+        warnings.push('Claude usage 返回成功，但未包含可识别窗口');
+        claudeQuota.error = 'Claude usage 返回成功，但未包含可识别窗口';
+      }
+    } catch (error) {
+      const message = error?.message || String(error);
+      warnings.push(message);
+      claudeQuota.error = message;
+    }
+  }
+  if (!claudeQuota.installed) {
+    claudeQuota.error = claudeQuota.error || 'Claude 未安装';
+  } else if (!claudeQuota.loggedIn) {
+    claudeQuota.error = claudeQuota.error || 'Claude 未登录（未检测到 OAuth token）';
+  } else if (!claudeQuota.quotaSupported) {
+    claudeQuota.error = claudeQuota.error || 'Claude 当前无法读取额度';
+  }
 
   const payload = {
     ok: true,
@@ -455,6 +659,66 @@ async function quotaHandler() {
     payload.warning = warnings.join(' | ');
   }
   return payload;
+}
+
+function readLogChunk(filePath, fromOffset, maxBytes = 128 * 1024) {
+  try {
+    if (!exists(filePath)) {
+      return { offset: 0, lines: [], truncated: false };
+    }
+    const stat = fs.statSync(filePath);
+    const size = Number(stat.size || 0);
+    if (size <= 0) {
+      return { offset: 0, lines: [], truncated: false };
+    }
+
+    let start = parseNonNegativeInt(fromOffset, 0);
+    if (start > size) start = size;
+
+    let truncated = false;
+    if (size - start > maxBytes) {
+      start = Math.max(0, size - maxBytes);
+      truncated = true;
+    }
+    if (start >= size) {
+      return { offset: size, lines: [], truncated: false };
+    }
+
+    const readSize = size - start;
+    const buffer = Buffer.allocUnsafe(readSize);
+    const fd = fs.openSync(filePath, 'r');
+    try {
+      fs.readSync(fd, buffer, 0, readSize, start);
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    let text = buffer.toString('utf8');
+    if (start > 0 && text && !text.startsWith('\n')) {
+      const firstBreak = text.indexOf('\n');
+      text = firstBreak >= 0 ? text.slice(firstBreak + 1) : '';
+    }
+
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean);
+    return { offset: size, lines, truncated };
+  } catch {
+    return { offset: parseNonNegativeInt(fromOffset, 0), lines: [], truncated: false };
+  }
+}
+
+async function runnerLogTailHandler(_body, req) {
+  const requestUrl = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const logOffset = parseNonNegativeInt(requestUrl.searchParams.get('logOffset'), 0);
+  const errOffset = parseNonNegativeInt(requestUrl.searchParams.get('errOffset'), 0);
+
+  return {
+    ok: true,
+    log: readLogChunk(RUNNER_LOG_PATH, logOffset),
+    err: readLogChunk(RUNNER_ERR_LOG_PATH, errOffset),
+  };
 }
 
 async function installHandler() {
@@ -592,20 +856,200 @@ async function openShellHandler() {
   return { ok: false, error: '未检测到图形终端程序，请手动在终端执行: bash scripts/start-runner.sh' };
 }
 
-async function startRunnerHandler() {
+async function startRunnerHandler(body) {
+  const saved = readRunnerConfig();
+  const serverUrlRaw = typeof body?.server === 'string' ? body.server.trim() : '';
+  const tokenRaw = typeof body?.token === 'string' ? body.token.trim() : '';
+  const runnerIdRaw = typeof body?.runnerId === 'string' ? body.runnerId.trim() : '';
+
+  const serverUrl = (serverUrlRaw || saved.server || defaultRunnerConfig().server).replace(/\/+$/, '');
+  const token = tokenRaw || saved.token;
+  const runnerId = runnerIdRaw || saved.runnerId;
+
+  if (!token) {
+    return { ok: false, error: '缺少 Runner Token：请先在 AgentLab 复制环境 Token 并保存。' };
+  }
+
+  saveRunnerConfig({ server: serverUrl, token, runnerId });
+
   if (IS_WIN) {
-    const scriptPath = path.join(SCRIPTS_DIR, 'start-runner.ps1');
+    const scriptPath = path.join(ROOT_DIR, 'start.ps1');
     runDetached('powershell.exe', [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
-      '-File', scriptPath
-    ]);
-    return { ok: true, message: 'Runner 已启动（Windows）' };
+      '-File', scriptPath,
+      '-Server', serverUrl,
+      '-Token', token
+    ], {
+      env: runnerId ? { RUNNER_ID: runnerId } : {}
+    });
+    return { ok: true, message: `Runner 已启动（Windows） -> ${serverUrl}，日志见 .run/runner.log` };
   }
 
-  const scriptPath = path.join(SCRIPTS_DIR, 'start-runner.sh');
-  runDetached('bash', [scriptPath]);
-  return { ok: true, message: 'Runner 已启动（Linux）' };
+  const scriptPath = path.join(ROOT_DIR, 'start.sh');
+  runDetached('bash', [scriptPath], {
+    env: {
+      RUNNER_SERVER: serverUrl,
+      RUNNER_TOKEN: token,
+      ...(runnerId ? { RUNNER_ID: runnerId } : {})
+    }
+  });
+  return { ok: true, message: `Runner 已启动（Linux） -> ${serverUrl}，日志见 .run/runner.log` };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function stopRunnerHandler() {
+  const pidFile = path.join(RUN_DIR, 'runner.pid');
+  const pid = readPidFromFile(pidFile);
+  let hadRunningProcess = false;
+  let stoppedByPid = false;
+
+  if (isPidRunning(pid)) {
+    hadRunningProcess = true;
+    try {
+      process.kill(pid);
+      await sleep(500);
+      if (isPidRunning(pid)) {
+        process.kill(pid, 'SIGKILL');
+      }
+      stoppedByPid = true;
+    } catch {
+      // ignore and fallback below
+    }
+  }
+
+  if (!stoppedByPid && !IS_WIN) {
+    // Linux fallback for stale pid file/process tree.
+    try {
+      spawnSync('bash', ['-lc', 'pkill -f "tsx .*agentlab-runner.ts|agentlab-runner.ts" >/dev/null 2>&1 || true'], {
+        env: buildRunnerEnv(),
+        stdio: 'ignore',
+      });
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    fs.unlinkSync(pidFile);
+  } catch {
+    // ignore
+  }
+
+  const runningAfter = isPidRunning(readPidFromFile(pidFile));
+  if (runningAfter) {
+    return { ok: false, error: 'Runner 停止失败，请手动检查进程。' };
+  }
+
+  if (hadRunningProcess || stoppedByPid) {
+    return { ok: true, message: 'Runner 已停止。' };
+  }
+  return { ok: true, message: 'Runner 当前未运行。' };
+}
+
+function readPidFromFile(pidPath) {
+  try {
+    if (!exists(pidPath)) return 0;
+    const raw = fs.readFileSync(pidPath, 'utf8').trim();
+    if (!raw) return 0;
+    const pid = Number.parseInt(raw, 10);
+    if (!Number.isFinite(pid) || pid <= 0) return 0;
+    return pid;
+  } catch {
+    return 0;
+  }
+}
+
+function isPidRunning(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getRunnerRuntimeStatus() {
+  const runnerPid = readPidFromFile(path.join(RUN_DIR, 'runner.pid'));
+  const guiPid = readPidFromFile(path.join(RUN_DIR, 'gui.pid'));
+  return {
+    ok: true,
+    runner: {
+      pid: runnerPid || null,
+      running: isPidRunning(runnerPid)
+    },
+    gui: {
+      pid: guiPid || null,
+      running: isPidRunning(guiPid)
+    }
+  };
+}
+
+async function runnerRuntimeStatusHandler() {
+  return getRunnerRuntimeStatus();
+}
+
+async function getRunnerConfigHandler() {
+  const config = readRunnerConfig();
+  return {
+    ok: true,
+    ...config,
+    tokenMasked: config.token ? `${'*'.repeat(Math.max(4, Math.min(16, config.token.length - 4)))}${config.token.slice(-4)}` : ''
+  };
+}
+
+async function saveRunnerConfigHandler(body) {
+  const next = saveRunnerConfig(body || {});
+  return { ok: true, ...next };
+}
+
+async function testRunnerConnectionHandler(body) {
+  const serverRaw = typeof body?.server === 'string' ? body.server.trim() : '';
+  const tokenRaw = typeof body?.token === 'string' ? body.token.trim() : '';
+  const runnerIdRaw = typeof body?.runnerId === 'string' ? body.runnerId.trim() : '';
+  const serverUrl = (serverRaw || readRunnerConfig().server || '').replace(/\/+$/, '');
+  const token = tokenRaw || readRunnerConfig().token;
+  const runnerId = runnerIdRaw || readRunnerConfig().runnerId || `${os.hostname()}-probe`;
+
+  if (!serverUrl) return { ok: false, error: '缺少 Server 地址' };
+  if (!token) return { ok: false, error: '缺少 Runner Token' };
+
+  try {
+    const res = await fetch(`${serverUrl}/api/runner/hello`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-runner-token': token
+      },
+      body: JSON.stringify({
+        token,
+        hello: {
+          runnerId,
+          host: os.hostname(),
+          platform: process.platform,
+          node: process.version,
+          ts: new Date().toISOString(),
+          source: 'agentlab-runner-gui'
+        }
+      })
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { ok: false, error: payload?.error || `连接失败 (HTTP ${res.status})` };
+    }
+    return {
+      ok: true,
+      message: '连接成功：Runner Token 与服务端匹配，可开始接任务。',
+      environment: payload?.environment || null,
+      queue: payload?.queue || null
+    };
+  } catch (error) {
+    return { ok: false, error: error?.message || String(error) };
+  }
 }
 
 async function slotsListHandler() {
@@ -742,6 +1186,12 @@ const apiHandlers = {
   '/api/login-claude': loginClaudeHandler,
   '/api/open-shell': openShellHandler,
   '/api/start-runner': startRunnerHandler,
+  '/api/stop-runner': stopRunnerHandler,
+  '/api/runner/runtime-status': runnerRuntimeStatusHandler,
+  '/api/runner/log-tail': runnerLogTailHandler,
+  '/api/runner-config': getRunnerConfigHandler,
+  '/api/runner-config/save': saveRunnerConfigHandler,
+  '/api/runner/test-connection': testRunnerConnectionHandler,
   '/api/slots': slotsListHandler,
   '/api/save-slot': saveSlotHandler,
   '/api/activate-slot': activateSlotHandler,
@@ -805,5 +1255,8 @@ server.listen(PORT, () => {
   console.log(`AgentLab Runner Web GUI running at http://localhost:${PORT}`);
   console.log(`Platform: ${process.platform}`);
   console.log('Press Ctrl+C to stop the server');
-  openBrowser(`http://localhost:${PORT}`);
+  const noOpenBrowser = String(process.env.AGENTLAB_RUNNER_NO_BROWSER || '').trim() === '1';
+  if (!noOpenBrowser) {
+    openBrowser(`http://localhost:${PORT}`);
+  }
 });

@@ -9,22 +9,12 @@ if [[ -z "${RUNNER_TOKEN:-}" ]]; then
 fi
 
 export RUNNER_SERVER="${RUNNER_SERVER:-http://127.0.0.1:3200}"
-
-ENTRY_TS="runner/src/agentlab-runner.ts"
-RUNNER_ROOT="."
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNNER_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENTRY_TS="$RUNNER_ROOT/src/agentlab-runner.ts"
 if [[ ! -f "$ENTRY_TS" ]]; then
-  RUNNER_ROOT="runner"
-  ENTRY_TS="src/agentlab-runner.ts"
-fi
-if [[ ! -f "$ENTRY_TS" ]]; then
-  echo "Cannot find runner entry file. Expected runner/src/agentlab-runner.ts or src/agentlab-runner.ts"
+  echo "Cannot find runner entry file: $ENTRY_TS"
   exit 1
-fi
-
-if [[ "$RUNNER_ROOT" == "." ]]; then
-  RUNNER_ROOT="$(pwd)"
-else
-  RUNNER_ROOT="$(cd "$RUNNER_ROOT" && pwd)"
 fi
 
 export PATH="$RUNNER_ROOT/.runtime/node/current/bin:$RUNNER_ROOT/.tools/npm-global/bin:$RUNNER_ROOT/.tools/npm-global/node_modules/.bin:$PATH"

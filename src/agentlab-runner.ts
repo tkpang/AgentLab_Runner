@@ -149,6 +149,15 @@ async function reportHealth(): Promise<void> {
 }
 
 async function emitRunnerLog(level: 'info' | 'warn' | 'error', message: string): Promise<void> {
+  const stamp = new Date().toISOString();
+  const localLine = `[${stamp}] [runner] [${level}] ${message}`;
+  if (level === 'error') {
+    console.error(localLine);
+  } else if (level === 'warn') {
+    console.warn(localLine);
+  } else {
+    console.log(localLine);
+  }
   await apiPost('/api/runner/log', {
     level,
     message,

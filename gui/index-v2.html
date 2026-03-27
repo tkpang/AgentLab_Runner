@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AgentLab Runner</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2334f5d0'/%3E%3Cstop offset='100%25' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='8' y='8' width='112' height='112' rx='28' fill='url(%23g)'/%3E%3Ctext x='64' y='84' text-anchor='middle' font-size='72' font-family='Arial,sans-serif' font-weight='700' fill='%2306283b'%3EA%3C/text%3E%3C/svg%3E" />
   <link rel="stylesheet" href="styles-v2.css">
 </head>
 <body>
@@ -38,7 +39,10 @@
     <section class="env-quick-section panel">
       <div class="section-header-inline">
         <h2>环境状态与操作</h2>
-        <button class="btn-check-small" onclick="checkEnvironment()">检测环境</button>
+        <div class="section-header-actions">
+          <button class="btn-check-small" onclick="checkEnvironment()">检测环境</button>
+          <button class="btn-check-small" onclick="refreshQuota()">刷新额度</button>
+        </div>
       </div>
       <div class="env-grid">
         <div class="env-cell tool-cell" id="codexToolCell">
@@ -58,6 +62,26 @@
           <div class="env-status-row">
             <span class="env-status-label">认证</span>
             <span class="status-pill neutral" id="codexAuthStatus">未检测</span>
+          </div>
+          <div class="tool-quota" id="codexQuotaCard" style="display: none;">
+            <div class="tool-quota-head">
+              <span class="tool-quota-title">额度余量</span>
+              <span class="quota-badge" id="codexQuotaBadge">未检测</span>
+            </div>
+            <div class="tool-quota-row">
+              <span class="tool-quota-label">5h</span>
+              <div class="progress-bar-compact">
+                <div class="progress-fill-compact" id="codex5hBar"></div>
+              </div>
+              <span class="tool-quota-text" id="codex5hText">--% 剩余 · --% 已用</span>
+            </div>
+            <div class="tool-quota-row">
+              <span class="tool-quota-label">7d</span>
+              <div class="progress-bar-compact">
+                <div class="progress-fill-compact" id="codex7dBar"></div>
+              </div>
+              <span class="tool-quota-text" id="codex7dText">--% 剩余 · --% 已用</span>
+            </div>
           </div>
           <div class="env-action-row single" id="codexActionRow">
             <button class="btn-cell btn-cell-primary" onclick="toolPrimaryAction('codex')" id="btnCodexPrimary">安装</button>
@@ -81,6 +105,26 @@
             <span class="env-status-label">认证</span>
             <span class="status-pill neutral" id="claudeAuthStatus">未检测</span>
           </div>
+          <div class="tool-quota" id="claudeQuotaCard" style="display: none;">
+            <div class="tool-quota-head">
+              <span class="tool-quota-title">额度余量</span>
+              <span class="quota-badge" id="claudeQuotaBadge">未检测</span>
+            </div>
+            <div class="tool-quota-row">
+              <span class="tool-quota-label">5h</span>
+              <div class="progress-bar-compact">
+                <div class="progress-fill-compact" id="claude5hBar"></div>
+              </div>
+              <span class="tool-quota-text" id="claude5hText">--% 剩余 · --% 已用</span>
+            </div>
+            <div class="tool-quota-row">
+              <span class="tool-quota-label">7d</span>
+              <div class="progress-bar-compact">
+                <div class="progress-fill-compact" id="claude7dBar"></div>
+              </div>
+              <span class="tool-quota-text" id="claude7dText">--% 剩余 · --% 已用</span>
+            </div>
+          </div>
           <div class="env-action-row single" id="claudeActionRow">
             <button class="btn-cell btn-cell-primary" onclick="toolPrimaryAction('claude')" id="btnClaudePrimary">安装</button>
           </div>
@@ -88,87 +132,28 @@
         <div class="env-cell">
           <div class="env-icon runner-bg">🚀</div>
           <div class="env-name">启动 Runner</div>
-          <div class="env-desc">使用当前凭证启动</div>
-          <div class="env-desc">如未登录请先登录</div>
-          <button class="btn-cell btn-cell-success" onclick="startRunner()">点击启动</button>
+          <div class="env-desc">连接 AgentLab 主站</div>
+          <div class="runner-connect-form">
+            <label class="runner-form-label" for="runnerServerInput">Server</label>
+            <input class="runner-form-input" id="runnerServerInput" placeholder="http://frp-aim.com:11068" />
+            <label class="runner-form-label" for="runnerTokenInput">Token</label>
+            <input class="runner-form-input" id="runnerTokenInput" type="password" placeholder="粘贴 Runner Token" />
+            <label class="runner-form-label" for="runnerIdInput">Runner ID（可选）</label>
+            <input class="runner-form-input" id="runnerIdInput" placeholder="例如 office-windows-01" />
+          </div>
+          <div class="env-action-row runner-action-row">
+            <button class="btn-cell btn-cell-secondary" onclick="saveRunnerConfig()">保存配置</button>
+            <button class="btn-cell btn-cell-secondary" onclick="testRunnerConnection()">测试连接</button>
+            <button class="btn-cell btn-cell-success" id="btnRunnerStart" onclick="startRunner()">启动</button>
+            <button class="btn-cell btn-cell-danger" id="btnRunnerStop" onclick="stopRunner()">停止</button>
+          </div>
+          <label class="runner-auto-start-row" for="runnerAutoStartToggle">
+            <input type="checkbox" id="runnerAutoStartToggle" />
+            <span>自动启动 Runner（默认关闭）</span>
+          </label>
+          <div class="runner-runtime-hint neutral" id="runnerRuntimeHint">状态：未检测</div>
         </div>
       </div>
-    </section>
-
-    <!-- Quota Section -->
-    <section class="quota-compact-section panel">
-      <div class="section-header-inline">
-        <h2>额度余量</h2>
-        <button class="btn-check-small" onclick="refreshQuota()">刷新额度</button>
-      </div>
-      <div class="quota-empty-hint" id="quotaEmptyHint" style="display: none;">当前无可展示额度：请先安装并登录对应工具，且该工具支持额度查询。</div>
-      
-      <!-- Codex Quota -->
-      <div class="quota-compact-card" id="codexQuotaCard" style="display: none;">
-        <div class="quota-compact-header">
-          <div class="quota-tool-info">
-            <span class="quota-icon quota-icon-brand"><img src="assets/brands/openai.svg" alt="OpenAI" class="quota-brand-icon" /></span>
-            <span class="quota-name">Codex</span>
-          </div>
-          <span class="quota-badge" id="codexQuotaBadge">未检测</span>
-        </div>
-        <div class="quota-bars-compact">
-          <div class="quota-row">
-            <span class="quota-label">5h</span>
-            <div class="progress-bar-compact">
-              <div class="progress-fill-compact" id="codex5hBar"></div>
-            </div>
-            <span class="quota-text" id="codex5hText">--% 剩余 · --% 已用</span>
-          </div>
-          <div class="quota-row">
-            <span class="quota-label">7d</span>
-            <div class="progress-bar-compact">
-              <div class="progress-fill-compact" id="codex7dBar"></div>
-            </div>
-            <span class="quota-text" id="codex7dText">--% 剩余 · --% 已用</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Claude Quota -->
-      <div class="quota-compact-card" id="claudeQuotaCard" style="display: none;">
-        <div class="quota-compact-header">
-          <div class="quota-tool-info">
-            <span class="quota-icon quota-icon-brand"><img src="assets/brands/claude.svg" alt="Claude" class="quota-brand-icon" /></span>
-            <span class="quota-name">Claude Code</span>
-          </div>
-          <span class="quota-badge" id="claudeQuotaBadge">未检测</span>
-        </div>
-        <div class="quota-bars-compact">
-          <div class="quota-row">
-            <span class="quota-label">5h</span>
-            <div class="progress-bar-compact">
-              <div class="progress-fill-compact" id="claude5hBar"></div>
-            </div>
-            <span class="quota-text" id="claude5hText">--% 剩余 · --% 已用</span>
-          </div>
-          <div class="quota-row">
-            <span class="quota-label">7d</span>
-            <div class="progress-bar-compact">
-              <div class="progress-fill-compact" id="claude7dBar"></div>
-            </div>
-            <span class="quota-text" id="claude7dText">--% 剩余 · --% 已用</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Account Management -->
-    <section class="account-compact-section panel">
-      <div class="account-inline">
-        <h2>账号管理</h2>
-        <div class="account-controls">
-          <span class="account-current">当前槽位: <strong id="currentSlot">--</strong></span>
-          <button class="btn-account" onclick="refreshSlots()">刷新槽位</button>
-          <button class="btn-account" onclick="manageSlots()">管理槽位</button>
-        </div>
-      </div>
-      <div class="account-hint" id="slotHint">槽位用法：1) 先登录 Codex/Claude；2) 点“管理槽位”并保存为槽位名；3) 之后可在槽位间一键切换。</div>
     </section>
 
     <!-- Log Section -->
@@ -178,6 +163,41 @@
         <div class="log-entry">欢迎使用 AgentLab Runner 控制面板</div>
       </div>
     </section>
+
+    <!-- Linux-only Runner Termination -->
+    <section class="runner-danger-section panel" id="runnerDangerSection" style="display: none;">
+      <div class="runner-danger-header">
+        <h2>Runner 终止</h2>
+        <span class="runner-danger-tip">Linux 网页模式可在此快速终止本机 Runner。</span>
+      </div>
+      <div class="runner-danger-actions">
+        <button class="btn-cell btn-cell-danger" id="btnRunnerStopBottom" onclick="stopRunner()">终止 Runner</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="slot-modal-overlay" id="accountSwitchModal" aria-hidden="true">
+    <div class="slot-modal account-switch-modal" role="dialog" aria-modal="true" aria-label="切换账号">
+      <div class="slot-modal-header">
+        <h3 id="accountSwitchTitle">切换账号</h3>
+        <button type="button" class="btn-slot-close" id="accountSwitchCloseBtn">✕</button>
+      </div>
+      <div class="slot-modal-status info" id="accountSwitchStatus">准备就绪</div>
+      <div class="account-switch-body">
+        <div class="account-switch-row">
+          <span class="account-switch-label">当前槽位</span>
+          <strong id="accountSwitchCurrentSlot">--</strong>
+        </div>
+        <div class="account-switch-hint" id="accountSwitchHint">
+          你可以重新登录，或打开账号槽位管理进行一键切换。
+        </div>
+        <div class="account-switch-actions">
+          <button type="button" class="btn-account" id="accountSwitchReloginBtn">重新登录</button>
+          <button type="button" class="btn-account" id="accountSwitchRefreshSlotsBtn">刷新槽位</button>
+          <button type="button" class="btn-account" id="accountSwitchOpenSlotsBtn">打开槽位管理</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="slot-modal-overlay" id="slotManagerModal" aria-hidden="true">

@@ -79,7 +79,7 @@ function renderTool(prefix, data) {
   if (!loggedIn) {
     setStatus(`${prefix}AuthStatus`, '未登录', 'warning');
     setPrimaryButtonState(prefix, '登录', 'login', 'primary');
-    setMenuItemVisible(menuSwitch, false);
+    setMenuItemVisible(menuSwitch, true);
     return;
   }
 
