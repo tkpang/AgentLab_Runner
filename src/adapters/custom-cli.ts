@@ -39,6 +39,7 @@ export class CustomCliAdapter implements AgentAdapter {
         cwd: workDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, ...envOverrides },
+        shell: process.platform === 'win32',
       });
       let timeoutHandle: NodeJS.Timeout | null = null;
 

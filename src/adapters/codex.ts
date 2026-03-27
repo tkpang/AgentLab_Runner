@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import which from '../utils/which.js';
@@ -15,12 +15,15 @@ function supportsCodexReasoningEffort(codexPath: string): boolean {
     return cachedCodexReasoningEffortSupport;
   }
   try {
-    const help = execFileSync(codexPath, ['exec', '--help'], {
+    const codexCommand = process.platform === 'win32' ? 'codex' : codexPath;
+    const out = spawnSync(codexCommand, ['exec', '--help'], {
       encoding: 'utf8',
       timeout: 5000,
       maxBuffer: 512 * 1024,
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
     });
+    const help = `${out.stdout || ''}\n${out.stderr || ''}`;
     cachedCodexReasoningEffortSupport = help.includes('--reasoning-effort');
   } catch {
     // Keep optimistic behavior and rely on runtime fallback branch below.
@@ -94,6 +97,7 @@ export class CodexAdapter implements AgentAdapter {
         cwd: workDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env, ...envOverrides },
+        shell: process.platform === 'win32',
       });
       let timeoutHandle: NodeJS.Timeout | null = null;
 
