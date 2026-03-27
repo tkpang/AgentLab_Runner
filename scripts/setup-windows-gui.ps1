@@ -370,6 +370,7 @@ $toolTip.InitialDelay = 300
 $toolTip.ReshowDelay = 100
 
 $script:activeJob = $null
+$script:activeJobUsesBusyUi = $false
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350
 $script:lang = "zh"
@@ -928,13 +929,18 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   }
 }
 
-function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [string[]]$arguments) {
+function Start-BackgroundScript([string]$displayName, [string]$scriptPath, [string[]]$arguments, [switch]$NonBlockingUi) {
   if ($script:activeJob -and $script:activeJob.State -eq "Running") {
     [System.Windows.Forms.MessageBox]::Show((T "msg_busy"), (T "ready"))
     return
   }
   Add-Log (LT "log_start" @($displayName))
-  Set-Busy $true $displayName
+  $script:activeJobUsesBusyUi = -not $NonBlockingUi.IsPresent
+  if ($script:activeJobUsesBusyUi) {
+    Set-Busy $true $displayName
+  } else {
+    $status.Text = $displayName
+  }
 
   $script:activeJob = Start-Job -ScriptBlock {
     param($targetScript, $targetArgs, $cwd)
@@ -1088,7 +1094,12 @@ $timer.Add_Tick({
     Remove-Job -Job $script:activeJob -Force -ErrorAction SilentlyContinue
     $script:activeJob = $null
     $timer.Stop()
-    Set-Busy $false
+    if ($script:activeJobUsesBusyUi) {
+      Set-Busy $false
+    } else {
+      $status.Text = T "ready"
+    }
+    $script:activeJobUsesBusyUi = $false
     Refresh-EnvironmentIndicators $false
   }
 })
@@ -1225,7 +1236,7 @@ $btnOpenFolder.Add_Click({
 $btnCodexLogin.Add_Click({
   $script:lastCodexLoginUrl = ""
   $btnCopyCodexUrl.Enabled = $false
-  Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @("-OpenBrowser")
+  Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @("-OpenBrowser") -NonBlockingUi
 })
 
 $btnCopyCodexUrl.Add_Click({
@@ -1242,7 +1253,7 @@ $btnCopyCodexUrl.Add_Click({
 })
 
 $btnClaudeLogin.Add_Click({
-  Start-BackgroundScript (T "task_claude_login_guide") $claudeGuideLoginScript @("-OpenBrowser")
+  Start-BackgroundScript (T "task_claude_login_guide") $claudeGuideLoginScript @("-OpenBrowser") -NonBlockingUi
 })
 
 $btnOpenShell.Add_Click({
