@@ -57,7 +57,7 @@ function Stop-StaleRunnerProcesses {
         $cmdLower.Contains("gui\\server.cjs") -or
         $cmdLower.Contains("electron-main.cjs") -or
         $cmdLower.Contains("electron\\dist\\electron.exe") -or
-        $cmdLower.Contains("npx-cli.js\" electron .") -or
+        $cmdLower.Contains('npx-cli.js" electron .') -or
         $cmdLower.Contains("node_modules\\.bin\\..\\electron\\cli.js") -or
         $cmdLower.Contains("start-desktop-gui.ps1") -or
         $cmdLower.Contains("start-web-gui.ps1")

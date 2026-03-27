@@ -1042,7 +1042,7 @@ function detectPidByPatterns(patterns = []) {
   if (!safePatterns.length) return 0;
 
   if (IS_WIN) {
-    const rootEscaped = ROOT_DIR.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const rootEscaped = ROOT_DIR.replace(/'/g, "''");
     const quotedPatterns = safePatterns.map((x) => `'${x.replace(/'/g, "''")}'`).join(',');
     const script = [
       `$root='${rootEscaped}'.ToLower()`,
@@ -1077,7 +1077,7 @@ function detectPidByPatterns(patterns = []) {
 
 function killRunnerDaemonFallback() {
   if (IS_WIN) {
-    const rootEscaped = ROOT_DIR.replace(/\\/g, '\\\\').replace(/'/g, "''");
+    const rootEscaped = ROOT_DIR.replace(/'/g, "''");
     const script = [
       `$root='${rootEscaped}'.ToLower()`,
       "$patterns=@('agentlab-runner.ts','start-runner.ps1')",
