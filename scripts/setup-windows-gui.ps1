@@ -382,6 +382,8 @@ $timer.Interval = 350
 $script:lang = "zh"
 $script:activeSlotName = ""
 $script:lastCodexLoginUrl = ""
+$script:codexBrowserOpenedByGui = $false
+$script:codexAuthPopupShown = $false
 $script:quotaState = $null
 $script:envState = @{ node = $false; codex = $false; claude = $false }
 $script:envPaths = @{ node = ""; codex = ""; claude = "" }
@@ -708,13 +710,17 @@ function Try-HandleGuiEvent([string]$line) {
         $code = ""
         try { $url = [string]$evt.url } catch {}
         try { $code = [string]$evt.code } catch {}
+        $prevUrl = $script:lastCodexLoginUrl
         $script:lastCodexLoginUrl = $url
         $btnCopyCodexUrl.Enabled = -not [string]::IsNullOrWhiteSpace($script:lastCodexLoginUrl)
-        if (-not [string]::IsNullOrWhiteSpace($url)) {
+        if (-not [string]::IsNullOrWhiteSpace($url) -and $url -ne $prevUrl) {
           Add-Log (LT "log_codex_login_url" @($url))
+        }
+        if (-not [string]::IsNullOrWhiteSpace($url) -and -not $script:codexBrowserOpenedByGui) {
           try {
             Start-Process -FilePath $url | Out-Null
             Add-Log("Browser opened from GUI: $url")
+            $script:codexBrowserOpenedByGui = $true
           } catch {
             Add-Log("Open browser failed, please open manually: $url")
           }
@@ -722,9 +728,10 @@ function Try-HandleGuiEvent([string]$line) {
         if (-not [string]::IsNullOrWhiteSpace($code)) {
           try { [System.Windows.Forms.Clipboard]::SetText($code) } catch {}
         }
-        if (-not [string]::IsNullOrWhiteSpace($url) -or -not [string]::IsNullOrWhiteSpace($code)) {
+        if (-not $script:codexAuthPopupShown -and -not [string]::IsNullOrWhiteSpace($url) -and -not [string]::IsNullOrWhiteSpace($code)) {
           $msg = LT "msg_codex_device_body" @($url, $code)
           [System.Windows.Forms.MessageBox]::Show($msg, (T "msg_codex_device_title")) | Out-Null
+          $script:codexAuthPopupShown = $true
         }
       }
       "claude_login_guide" {
@@ -930,6 +937,12 @@ function Add-Log([string]$message) {
   $tbLog.ScrollToCaret()
 }
 
+function Parse-ExitCode([string]$line) {
+  if ([string]::IsNullOrWhiteSpace($line)) { return "" }
+  if (-not $line.StartsWith("__EXIT_CODE__:")) { return "" }
+  return $line.Substring("__EXIT_CODE__:".Length).Trim()
+}
+
 function Set-Busy([bool]$busy, [string]$text = "") {
   $btnInstall.Enabled = -not $busy
   $btnUninstall.Enabled = -not $busy
@@ -1097,8 +1110,8 @@ $timer.Add_Tick({
   foreach ($line in $chunk) {
     $s = "$line"
     if (Try-HandleGuiEvent $s) { continue }
-    if ($s.StartsWith("__EXIT_CODE__:")) {
-      $exitCode = $s.Substring(12)
+    $exitCode = Parse-ExitCode $s
+    if (-not [string]::IsNullOrWhiteSpace($exitCode)) {
       if ($exitCode -eq "0") {
         Add-Log (LT "log_done_exit" @($exitCode))
       } else {
@@ -1114,8 +1127,8 @@ $timer.Add_Tick({
     foreach ($line in $tail) {
       $s = "$line"
       if (Try-HandleGuiEvent $s) { continue }
-      if ($s.StartsWith("__EXIT_CODE__:")) {
-        $exitCode = $s.Substring(12)
+      $exitCode = Parse-ExitCode $s
+      if (-not [string]::IsNullOrWhiteSpace($exitCode)) {
         if ($exitCode -eq "0") {
           Add-Log (LT "log_done_exit" @($exitCode))
         } else {
@@ -1269,6 +1282,8 @@ $btnOpenFolder.Add_Click({
 
 $btnCodexLogin.Add_Click({
   $script:lastCodexLoginUrl = ""
+  $script:codexBrowserOpenedByGui = $false
+  $script:codexAuthPopupShown = $false
   $btnCopyCodexUrl.Enabled = $false
   Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @() -NonBlockingUi
 })
