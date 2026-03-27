@@ -15,7 +15,6 @@ const RUNNER_CONFIG_PATH = path.join(RUN_DIR, 'runner-config.json');
 const RUNNER_LOG_PATH = path.join(RUN_DIR, 'runner.log');
 const RUNNER_ERR_LOG_PATH = path.join(RUN_DIR, 'runner.err.log');
 const IS_WIN = process.platform === 'win32';
-const COMSPEC = process.env.ComSpec || 'cmd.exe';
 const RUNNER_BIN_PATHS = [
   path.join(ROOT_DIR, '.runtime', 'node', 'current'),
   path.join(ROOT_DIR, '.runtime', 'node', 'current', 'bin'),
@@ -104,6 +103,24 @@ function commandExists(cmd) {
   return out.status === 0;
 }
 
+function localNodeExecutable() {
+  if (!IS_WIN) return '';
+  const candidates = [
+    path.join(ROOT_DIR, '.runtime', 'node', 'current', 'node.exe'),
+    path.join(ROOT_DIR, '.runtime', 'node', 'current', 'bin', 'node.exe'),
+  ];
+  for (const candidate of candidates) {
+    if (exists(candidate)) return candidate;
+  }
+  return '';
+}
+
+function localCodexEntry() {
+  if (!IS_WIN) return '';
+  const candidate = path.join(ROOT_DIR, '.tools', 'npm-global', 'node_modules', '@openai', 'codex', 'bin', 'codex.js');
+  return exists(candidate) ? candidate : '';
+}
+
 function localCliPath(name) {
   if (!IS_WIN) return '';
   const candidates = [
@@ -118,14 +135,8 @@ function localCliPath(name) {
 
 function commandVersion(cmd) {
   if (!cmd) return '';
-  let out;
-  if (IS_WIN && cmd.toLowerCase().endsWith('.cmd') && exists(cmd)) {
-    const commandLine = `"${cmd}" --version`;
-    out = spawnSync(COMSPEC, ['/d', '/s', '/c', commandLine], { encoding: 'utf8', env: buildRunnerEnv() });
-  } else {
-    if (!commandExists(cmd)) return '';
-    out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv(), shell: IS_WIN });
-  }
+  if (!commandExists(cmd)) return '';
+  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv(), shell: IS_WIN });
   const text = `${out.stdout || ''}\n${out.stderr || ''}`.trim();
   return text.split(/\r?\n/)[0] || '';
 }
@@ -229,9 +240,19 @@ function localAuthState() {
   const codexAuth = readJsonSafe(path.join(home, '.codex', 'auth.json'));
   const codexCli = localCliPath('codex');
   const codexInstalled = Boolean(codexCli) || commandExists('codex') || commandExists('codex.cmd');
+  const codexVersion = (() => {
+    const nodeExe = localNodeExecutable();
+    const codexEntry = localCodexEntry();
+    if (nodeExe && codexEntry) {
+      const out = spawnSync(nodeExe, [codexEntry, '--version'], { encoding: 'utf8', env: buildRunnerEnv() });
+      const text = `${out.stdout || ''}\n${out.stderr || ''}`.trim();
+      return text.split(/\r?\n/)[0] || '';
+    }
+    return commandVersion('codex');
+  })();
   const codex = {
     installed: codexInstalled,
-    version: commandVersion(codexCli || 'codex'),
+    version: codexVersion,
     loggedIn: Boolean((codexAuth && hasToken(codexAuth)) || process.env.OPENAI_API_KEY || process.env.OPENAI_TOKEN),
     email: codexAuth ? extractEmail(codexAuth) : '',
     authPath: path.join(home, '.codex', 'auth.json')
@@ -262,7 +283,7 @@ function localAuthState() {
   const claudeInstalled = Boolean(claudeCli) || commandExists('claude') || commandExists('claude.cmd');
   const claude = {
     installed: claudeInstalled,
-    version: commandVersion(claudeCli || 'claude'),
+    version: commandVersion('claude'),
     loggedIn: Boolean((effectiveClaudeAuth && hasToken(effectiveClaudeAuth)) || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     email: effectiveClaudeAuth ? extractEmail(effectiveClaudeAuth) : ''
   };
@@ -470,11 +491,13 @@ function fetchCodexRateLimitsViaAppServer() {
       resolve({ ok: false, error: 'codex not installed' });
       return;
     }
+    const nodeExe = localNodeExecutable();
+    const codexEntry = localCodexEntry();
 
     const initId = 'init-1';
     const rateId = 'rate-1';
-    const proc = IS_WIN
-      ? spawn(COMSPEC, ['/d', '/s', '/c', `"${codexCli || 'codex'}" app-server`], {
+    const proc = (IS_WIN && nodeExe && codexEntry)
+      ? spawn(nodeExe, [codexEntry, 'app-server'], {
         cwd: ROOT_DIR,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
@@ -483,6 +506,7 @@ function fetchCodexRateLimitsViaAppServer() {
       : spawn('codex', ['app-server'], {
         cwd: ROOT_DIR,
         windowsHide: true,
+        shell: IS_WIN,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: buildRunnerEnv()
       });
