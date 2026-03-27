@@ -23,19 +23,19 @@ function Stop-ManagedProcess {
     return
   }
 
-  $pid = [int]$pidRaw
-  $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
+  $targetPid = [int]$pidRaw
+  $proc = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
   if ($proc) {
-    Write-Host "[runner] Stopping $Name (pid $pid)..."
-    Stop-Process -Id $pid -ErrorAction SilentlyContinue
+    Write-Host "[runner] Stopping $Name (pid $targetPid)..."
+    Stop-Process -Id $targetPid -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 600
-    $proc2 = Get-Process -Id $pid -ErrorAction SilentlyContinue
+    $proc2 = Get-Process -Id $targetPid -ErrorAction SilentlyContinue
     if ($proc2) {
-      Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+      Stop-Process -Id $targetPid -Force -ErrorAction SilentlyContinue
     }
     Write-Host "[runner] $Name stopped."
   } else {
-    Write-Host "[runner] $Name already exited (pid $pid)."
+    Write-Host "[runner] $Name already exited (pid $targetPid)."
   }
 
   Remove-Item -Path $PidFile -ErrorAction SilentlyContinue
