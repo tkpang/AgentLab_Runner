@@ -1,6 +1,6 @@
 // AgentLab Runner Web GUI - 主逻辑
 
-let apiBaseUrl = 'http://localhost:8765/api';
+let apiBaseUrl = `${window.location.origin}/api`;
 
 // 添加日志
 function addLog(message, type = 'info') {

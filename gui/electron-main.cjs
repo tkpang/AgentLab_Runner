@@ -6,7 +6,8 @@ const { spawn } = require('child_process');
 let mainWindow = null;
 let tray = null;
 let serverProcess = null;
-const SERVER_PORT = 8765;
+const DEFAULT_GUI_PORT = 18765;
+const SERVER_PORT = Number(process.env.AGENTLAB_GUI_PORT || DEFAULT_GUI_PORT);
 
 function createBrandIcon(size = 256) {
   const safeSize = Math.max(16, Number(size) || 256);
@@ -30,9 +31,11 @@ function startBackendServer() {
   const serverScript = path.join(__dirname, 'server.cjs');
   serverProcess = spawn('node', [serverScript], {
     cwd: __dirname,
-    stdio: 'inherit',
+    stdio: 'ignore',
+    windowsHide: true,
     env: {
       ...process.env,
+      AGENTLAB_GUI_PORT: String(SERVER_PORT),
       AGENTLAB_RUNNER_NO_BROWSER: '1',
     },
   });
@@ -91,7 +94,8 @@ function createWindow() {
 
 // Create system tray
 function createTray() {
-  tray = new Tray(createBrandIcon(32));
+  const trayIcon = createBrandIcon(64).resize({ width: 16, height: 16, quality: 'best' });
+  tray = new Tray(trayIcon);
   
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -135,6 +139,9 @@ function createTray() {
 
 // App ready
 app.whenReady().then(() => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.agentlab.runner');
+  }
   startBackendServer();
   createWindow();
   createTray();

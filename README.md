@@ -8,6 +8,11 @@
 - 支持 Linux（Ubuntu）和 Windows。
 - 支持快速一键配置 Codex / Claude Code（可二选一或都装）。
 
+## 运维文档
+
+- Windows 宿主机 SSH 开启 + Linux 虚拟机连接排障：
+  - `runner/docs/windows-host-ssh-from-linux-vm.md`
+
 ## 快速开始
 
 1. 安装依赖（任选其一）  

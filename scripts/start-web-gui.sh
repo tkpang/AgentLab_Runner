@@ -19,7 +19,8 @@ if ! command -v node >/dev/null 2>&1; then
 fi
 
 cd "$GUI_DIR"
-echo "Starting server at http://localhost:8765"
+GUI_PORT="${AGENTLAB_GUI_PORT:-18765}"
+echo "Starting server at http://localhost:${GUI_PORT}"
 echo "Browser will open automatically..."
 echo
 echo "Press Ctrl+C to stop the server"

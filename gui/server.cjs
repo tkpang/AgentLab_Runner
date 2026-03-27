@@ -5,7 +5,8 @@ const path = require('path');
 const os = require('os');
 const { spawn, spawnSync, exec } = require('child_process');
 
-const PORT = Number(process.env.AGENTLAB_GUI_PORT || 8765);
+const DEFAULT_GUI_PORT = 18765;
+const PORT = Number(process.env.AGENTLAB_GUI_PORT || DEFAULT_GUI_PORT);
 const GUI_DIR = __dirname;
 const ROOT_DIR = path.join(__dirname, '..');
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');

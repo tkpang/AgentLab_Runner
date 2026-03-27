@@ -1,4 +1,9 @@
-export const API_BASE_URL = 'http://localhost:8765/api';
+const origin =
+  (typeof window !== 'undefined' && window.location && window.location.origin)
+    ? window.location.origin
+    : 'http://127.0.0.1:18765';
+
+export const API_BASE_URL = `${origin}/api`;
 
 async function parseJson(response) {
   let payload = null;

@@ -24,7 +24,8 @@ if (-not $nodeCmd) {
 
 # Start the web server
 Set-Location $guiDir
-Write-Host "Starting server at http://localhost:8765" -ForegroundColor Green
+$guiPort = if ($env:AGENTLAB_GUI_PORT) { $env:AGENTLAB_GUI_PORT } else { "18765" }
+Write-Host "Starting server at http://localhost:$guiPort" -ForegroundColor Green
 Write-Host "Browser will open automatically..." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray

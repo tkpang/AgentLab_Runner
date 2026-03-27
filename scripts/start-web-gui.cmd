@@ -22,7 +22,10 @@ if %errorlevel% neq 0 (
 
 REM Start the web server
 cd /d "%GUI_DIR%"
-echo Starting server at http://localhost:8765
+if "%AGENTLAB_GUI_PORT%"=="" (
+  set "AGENTLAB_GUI_PORT=18765"
+)
+echo Starting server at http://localhost:%AGENTLAB_GUI_PORT%
 echo Browser will open automatically...
 echo.
 echo Press Ctrl+C to stop the server
