@@ -15,6 +15,7 @@ const RUNNER_CONFIG_PATH = path.join(RUN_DIR, 'runner-config.json');
 const RUNNER_LOG_PATH = path.join(RUN_DIR, 'runner.log');
 const RUNNER_ERR_LOG_PATH = path.join(RUN_DIR, 'runner.err.log');
 const IS_WIN = process.platform === 'win32';
+const COMSPEC = process.env.ComSpec || 'cmd.exe';
 const RUNNER_BIN_PATHS = [
   path.join(ROOT_DIR, '.runtime', 'node', 'current'),
   path.join(ROOT_DIR, '.runtime', 'node', 'current', 'bin'),
@@ -103,9 +104,28 @@ function commandExists(cmd) {
   return out.status === 0;
 }
 
+function localCliPath(name) {
+  if (!IS_WIN) return '';
+  const candidates = [
+    path.join(ROOT_DIR, '.tools', 'npm-global', `${name}.cmd`),
+    path.join(ROOT_DIR, '.tools', 'npm-global', 'bin', `${name}.cmd`),
+  ];
+  for (const candidate of candidates) {
+    if (exists(candidate)) return candidate;
+  }
+  return '';
+}
+
 function commandVersion(cmd) {
-  if (!commandExists(cmd)) return '';
-  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv(), shell: IS_WIN });
+  if (!cmd) return '';
+  let out;
+  if (IS_WIN && cmd.toLowerCase().endsWith('.cmd') && exists(cmd)) {
+    const commandLine = `"${cmd}" --version`;
+    out = spawnSync(COMSPEC, ['/d', '/s', '/c', commandLine], { encoding: 'utf8', env: buildRunnerEnv() });
+  } else {
+    if (!commandExists(cmd)) return '';
+    out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv(), shell: IS_WIN });
+  }
   const text = `${out.stdout || ''}\n${out.stderr || ''}`.trim();
   return text.split(/\r?\n/)[0] || '';
 }
@@ -207,10 +227,11 @@ function localAuthState() {
   const home = os.homedir();
 
   const codexAuth = readJsonSafe(path.join(home, '.codex', 'auth.json'));
-  const codexInstalled = commandExists('codex');
+  const codexCli = localCliPath('codex');
+  const codexInstalled = Boolean(codexCli) || commandExists('codex') || commandExists('codex.cmd');
   const codex = {
     installed: codexInstalled,
-    version: commandVersion('codex'),
+    version: commandVersion(codexCli || 'codex'),
     loggedIn: Boolean((codexAuth && hasToken(codexAuth)) || process.env.OPENAI_API_KEY || process.env.OPENAI_TOKEN),
     email: codexAuth ? extractEmail(codexAuth) : '',
     authPath: path.join(home, '.codex', 'auth.json')
@@ -237,10 +258,11 @@ function localAuthState() {
   }
   const effectiveClaudeAuth = claudeAuthWithToken || claudeAuth;
 
-  const claudeInstalled = commandExists('claude');
+  const claudeCli = localCliPath('claude');
+  const claudeInstalled = Boolean(claudeCli) || commandExists('claude') || commandExists('claude.cmd');
   const claude = {
     installed: claudeInstalled,
-    version: commandVersion('claude'),
+    version: commandVersion(claudeCli || 'claude'),
     loggedIn: Boolean((effectiveClaudeAuth && hasToken(effectiveClaudeAuth)) || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
     email: effectiveClaudeAuth ? extractEmail(effectiveClaudeAuth) : ''
   };
@@ -443,20 +465,27 @@ function parseCodexRateLimits(rateLimits) {
 
 function fetchCodexRateLimitsViaAppServer() {
   return new Promise((resolve) => {
-    if (!commandExists('codex')) {
+    const codexCli = localCliPath('codex');
+    if (!codexCli && !commandExists('codex') && !commandExists('codex.cmd')) {
       resolve({ ok: false, error: 'codex not installed' });
       return;
     }
 
     const initId = 'init-1';
     const rateId = 'rate-1';
-    const proc = spawn('codex', ['app-server'], {
-      cwd: ROOT_DIR,
-      windowsHide: true,
-      shell: IS_WIN,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: buildRunnerEnv()
-    });
+    const proc = IS_WIN
+      ? spawn(COMSPEC, ['/d', '/s', '/c', `"${codexCli || 'codex'}" app-server`], {
+        cwd: ROOT_DIR,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildRunnerEnv()
+      })
+      : spawn('codex', ['app-server'], {
+        cwd: ROOT_DIR,
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: buildRunnerEnv()
+      });
 
     let done = false;
     let stdoutBuffer = '';
