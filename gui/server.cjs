@@ -1152,6 +1152,13 @@ function getRunnerRuntimeStatus() {
     }
   }
 
+  // This endpoint is served by the GUI backend itself; at minimum, GUI backend is alive.
+  if (!guiRunning) {
+    guiPid = process.pid;
+    guiRunning = true;
+    writePidFile(guiPidPath, process.pid);
+  }
+
   return {
     ok: true,
     runner: {
