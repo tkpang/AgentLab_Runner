@@ -153,6 +153,13 @@ $btnAuthStatus.Location = New-Object System.Drawing.Point(428, 35)
 $btnAuthStatus.Size = New-Object System.Drawing.Size(150, 28)
 $groupLogin.Controls.Add($btnAuthStatus)
 
+$btnCopyCodexUrl = New-Object System.Windows.Forms.Button
+$btnCopyCodexUrl.Text = "Copy Codex Login URL"
+$btnCopyCodexUrl.Location = New-Object System.Drawing.Point(588, 35)
+$btnCopyCodexUrl.Size = New-Object System.Drawing.Size(170, 28)
+$btnCopyCodexUrl.Enabled = $false
+$groupLogin.Controls.Add($btnCopyCodexUrl)
+
 $lblSlots = New-Object System.Windows.Forms.Label
 $lblSlots.Text = "Account Slots:"
 $lblSlots.Location = New-Object System.Drawing.Point(18, 78)
@@ -367,6 +374,7 @@ $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350
 $script:lang = "zh"
 $script:activeSlotName = ""
+$script:lastCodexLoginUrl = ""
 $script:quotaState = $null
 $script:envState = @{ node = $false; codex = $false; claude = $false }
 $script:envPaths = @{ node = ""; codex = ""; claude = "" }
@@ -391,6 +399,7 @@ function T([string]$k) {
       "btn_login_claude" { return "Login Claude" }
       "btn_open_shell" { return "Open Runner Shell" }
       "btn_check_login" { return "Check Login Status" }
+      "btn_copy_codex_url" { return "Copy Codex URL" }
       "label_slots" { return "Account Slots:" }
       "btn_refresh_slots" { return "Refresh Slots" }
       "btn_activate_slot" { return "Activate Slot" }
@@ -450,6 +459,8 @@ function T([string]$k) {
       "msg_confirm_delete_tail" { return "' ?" }
       "msg_codex_device_title" { return "Codex Login" }
       "msg_codex_device_body" { return "Browser login started.`n`nURL:`n{0}`n`nCode (copied to clipboard): {1}`n`nAfter confirming in browser, click 'Check Login Status'." }
+      "msg_no_codex_url" { return "No Codex login URL yet. Click 'Login Codex' first." }
+      "title_codex_url" { return "Codex URL" }
       "msg_claude_login_title" { return "Claude Login" }
       "msg_claude_login_body" { return "Claude login guide started.`n`nA browser page has been opened, and a terminal is launched with `claude login`.`n`nIf you don't have a Claude account yet, you can close this and continue using Codex only." }
       "title_save_slot_failed" { return "Save Slot Failed" }
@@ -476,6 +487,8 @@ function T([string]$k) {
       "log_runner_root" { return "Runner root: {0}" }
       "log_env_summary" { return "Environment: Node={0}, Codex={1}, Claude={2}" }
       "log_install_selection" { return "Install selection => Codex={0}, Claude={1}, CNMirror={2}" }
+      "log_codex_login_url" { return "Codex login URL: {0}" }
+      "log_copied_codex_url" { return "Copied Codex login URL to clipboard." }
       default { return $k }
     }
   }
@@ -497,6 +510,7 @@ function T([string]$k) {
     "btn_login_claude" { return "登录 Claude" }
     "btn_open_shell" { return "打开 Runner 终端" }
     "btn_check_login" { return "检查登录状态" }
+    "btn_copy_codex_url" { return "复制Codex登录链接" }
     "label_slots" { return "账号槽位：" }
     "btn_refresh_slots" { return "刷新槽位" }
     "btn_activate_slot" { return "启用槽位" }
@@ -556,6 +570,8 @@ function T([string]$k) {
     "msg_confirm_delete_tail" { return "' 吗？" }
     "msg_codex_device_title" { return "Codex 登录" }
     "msg_codex_device_body" { return "已启动浏览器登录。`n`nURL：`n{0}`n`n验证码（已复制到剪贴板）：{1}`n`n在浏览器确认后，请点击【检查登录状态】。" }
+    "msg_no_codex_url" { return "当前没有可复制的 Codex 登录链接，请先点击【登录 Codex】。" }
+    "title_codex_url" { return "Codex 链接" }
     "msg_claude_login_title" { return "Claude 登录" }
     "msg_claude_login_body" { return "已启动 Claude 登录引导。`n`n浏览器已打开登录页面，同时终端会执行 `claude login`。`n`n如果你当前没有 Claude 账户，可直接关闭并继续只使用 Codex。" }
     "title_save_slot_failed" { return "保存槽位失败" }
@@ -582,6 +598,8 @@ function T([string]$k) {
     "log_runner_root" { return "Runner 根目录：{0}" }
     "log_env_summary" { return "环境状态：Node={0}，Codex={1}，Claude={2}" }
     "log_install_selection" { return "安装选择 => Codex={0}，Claude={1}，国内镜像={2}" }
+    "log_codex_login_url" { return "Codex 登录链接：{0}" }
+    "log_copied_codex_url" { return "已复制 Codex 登录链接到剪贴板。" }
     default { return $k }
   }
 }
@@ -662,6 +680,11 @@ function Try-HandleGuiEvent([string]$line) {
         $code = ""
         try { $url = [string]$evt.url } catch {}
         try { $code = [string]$evt.code } catch {}
+        $script:lastCodexLoginUrl = $url
+        $btnCopyCodexUrl.Enabled = -not [string]::IsNullOrWhiteSpace($script:lastCodexLoginUrl)
+        if (-not [string]::IsNullOrWhiteSpace($url)) {
+          Add-Log (LT "log_codex_login_url" @($url))
+        }
         if (-not [string]::IsNullOrWhiteSpace($code)) {
           try { [System.Windows.Forms.Clipboard]::SetText($code) } catch {}
         }
@@ -829,6 +852,7 @@ function Apply-Language() {
   $btnClaudeLogin.Text = T "btn_login_claude"
   $btnOpenShell.Text = T "btn_open_shell"
   $btnAuthStatus.Text = T "btn_check_login"
+  $btnCopyCodexUrl.Text = T "btn_copy_codex_url"
   $lblSlots.Text = T "label_slots"
   $btnRefreshSlots.Text = T "btn_refresh_slots"
   $btnActivateSlot.Text = T "btn_activate_slot"
@@ -876,6 +900,7 @@ function Set-Busy([bool]$busy, [string]$text = "") {
   $btnUninstall.Enabled = -not $busy
   $btnVerify.Enabled = -not $busy
   $btnAuthStatus.Enabled = -not $busy
+  $btnCopyCodexUrl.Enabled = (-not $busy) -and (-not [string]::IsNullOrWhiteSpace($script:lastCodexLoginUrl))
   $btnRefreshSlots.Enabled = -not $busy
   $btnActivateSlot.Enabled = -not $busy
   $btnDeleteSlot.Enabled = -not $busy
@@ -1198,7 +1223,22 @@ $btnOpenFolder.Add_Click({
 })
 
 $btnCodexLogin.Add_Click({
+  $script:lastCodexLoginUrl = ""
+  $btnCopyCodexUrl.Enabled = $false
   Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @("-OpenBrowser")
+})
+
+$btnCopyCodexUrl.Add_Click({
+  if ([string]::IsNullOrWhiteSpace($script:lastCodexLoginUrl)) {
+    [System.Windows.Forms.MessageBox]::Show((T "msg_no_codex_url"), (T "title_codex_url")) | Out-Null
+    return
+  }
+  try {
+    [System.Windows.Forms.Clipboard]::SetText($script:lastCodexLoginUrl)
+    Add-Log (T "log_copied_codex_url")
+  } catch {
+    Add-Log("Clipboard copy failed: $($_.Exception.Message)")
+  }
 })
 
 $btnClaudeLogin.Add_Click({

@@ -23,6 +23,15 @@ function Emit-Event([string]$type, [hashtable]$payload = @{}) {
   Write-Output ("__AL_EVENT__:" + ($obj | ConvertTo-Json -Compress -Depth 6))
 }
 
+function Strip-Ansi([string]$text) {
+  if ([string]::IsNullOrWhiteSpace($text)) { return "" }
+  # Remove common ANSI escape/control sequences that can break URL parsing.
+  $t = $text
+  $t = [regex]::Replace($t, '\x1B\[[0-9;?]*[ -/]*[@-~]', '')
+  $t = [regex]::Replace($t, '\x1B\][^\a]*(\a|\x1B\\)', '')
+  return $t
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $runnerRoot = Split-Path -Parent $scriptDir
 
@@ -54,31 +63,58 @@ foreach ($line in $rawLines) {
 }
 
 $allText = ($rawLines -join "`n")
+$cleanText = Strip-Ansi $allText
 $url = ""
 $code = ""
+$browserOpened = $false
+$fallbackUrl = "https://auth.openai.com/codex/device"
 
 try {
-  $urlMatch = [regex]::Match($allText, 'https://auth\.openai\.com/\S+')
-  if ($urlMatch.Success) {
-    $url = $urlMatch.Value
+  $urlMatches = [regex]::Matches($cleanText, 'https?://[^\s"''<>]+')
+  if ($urlMatches.Count -gt 0) {
+    foreach ($m in $urlMatches) {
+      $candidate = [string]$m.Value
+      if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+      $candidate = $candidate.TrimEnd(".", ",", ";", ")", "]")
+      if ($candidate -match 'auth\.openai\.com') {
+        $url = $candidate
+        break
+      }
+      if ([string]::IsNullOrWhiteSpace($url)) {
+        $url = $candidate
+      }
+    }
   }
 } catch {}
 
 try {
-  $codeMatch = [regex]::Match($allText, '\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b')
+  $codeMatch = [regex]::Match($cleanText, '\b[A-Z0-9]{4}-[A-Z0-9]{4,}\b')
   if ($codeMatch.Success) {
     $code = $codeMatch.Value
   }
 } catch {}
 
+if ([string]::IsNullOrWhiteSpace($url)) {
+  $url = $fallbackUrl
+}
+
 if ($OpenBrowser.IsPresent -and -not [string]::IsNullOrWhiteSpace($url)) {
   try {
-    Start-Process $url | Out-Null
+    Start-Process -FilePath $url | Out-Null
+    $browserOpened = $true
     Write-Host ("[login] Browser opened: " + $url)
   } catch {
-    Write-Host ("[login] Cannot open browser automatically: " + $_.Exception.Message) -ForegroundColor Yellow
+    try {
+      Start-Process -FilePath "cmd.exe" -ArgumentList @("/c", "start", "", $url) | Out-Null
+      $browserOpened = $true
+      Write-Host ("[login] Browser opened via cmd start: " + $url)
+    } catch {
+      Write-Host ("[login] Cannot open browser automatically: " + $_.Exception.Message) -ForegroundColor Yellow
+    }
   }
 }
+
+Write-Output ("[login] Open this URL manually if browser did not open: " + $url)
 
 if (-not [string]::IsNullOrWhiteSpace($code)) {
   try {
@@ -92,8 +128,7 @@ if (-not [string]::IsNullOrWhiteSpace($code)) {
 Emit-Event -type "codex_device_auth" -payload @{
   url = $url
   code = $code
-  browserOpened = $OpenBrowser.IsPresent
+  browserOpened = $browserOpened
 }
 
 Write-Host "[login] After confirming in browser, click 'Check Login Status' in GUI."
-
