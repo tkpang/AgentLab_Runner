@@ -1135,7 +1135,16 @@ function getRunnerRuntimeStatus() {
   }
 
   if (!guiRunning) {
-    const detectedGuiPid = detectPidByPatterns(['gui\\server.cjs', 'electron-main.cjs', 'start-web-gui.ps1', 'start-desktop-gui.ps1']);
+    const detectedGuiPid = detectPidByPatterns([
+      'gui\\server.cjs',
+      'gui/server.cjs',
+      'electron-main.cjs',
+      'electron\\dist\\electron.exe',
+      'npx-cli.js" electron .',
+      'node_modules\\.bin\\..\\electron\\cli.js',
+      'start-web-gui.ps1',
+      'start-desktop-gui.ps1'
+    ]);
     if (detectedGuiPid > 0) {
       guiPid = detectedGuiPid;
       guiRunning = true;
