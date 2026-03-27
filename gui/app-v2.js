@@ -250,12 +250,16 @@ async function refreshSlots() {
   try {
     const response = await fetch(`${apiBaseUrl}/slots`);
     const data = await response.json();
-    if (data.ok && data.activeSlot) {
-      document.getElementById('currentSlot').textContent = data.activeSlot;
-      addLog(`当前槽位: ${data.activeSlot}`, 'success');
+    if (!data.ok) {
+      addLog(`槽位读取失败: ${data.error || '未知错误'}`, 'error');
+      return;
+    }
+    const active = data.activeSlot || '--';
+    document.getElementById('currentSlot').textContent = active;
+    if (data.message) {
+      addLog(data.message, 'warning');
     } else {
-      document.getElementById('currentSlot').textContent = '--';
-      addLog('未找到活动槽位', 'warning');
+      addLog(`当前槽位: ${active}`, 'success');
     }
   } catch (error) {
     addLog(`刷新槽位失败: ${error.message}`, 'error');
@@ -263,8 +267,43 @@ async function refreshSlots() {
 }
 
 async function manageSlots() {
-  addLog('打开账号槽位管理...', 'info');
-  window.open('/slots.html', '_blank');
+  addLog('读取槽位列表...', 'info');
+  try {
+    const response = await fetch(`${apiBaseUrl}/slots`);
+    const data = await response.json();
+    if (!data.ok) {
+      addLog(`读取槽位失败: ${data.error || '未知错误'}`, 'error');
+      return;
+    }
+    if (!data.slots || data.slots.length === 0) {
+      addLog(data.message || '当前没有可切换槽位', 'warning');
+      return;
+    }
+    const lines = data.slots.map((s, i) => `${i + 1}. ${s.name}${s.isActive ? ' (当前)' : ''}`);
+    const raw = prompt(`输入要启用的槽位序号:\\n${lines.join('\\n')}`);
+    if (!raw) return;
+    const idx = Number(raw) - 1;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= data.slots.length) {
+      addLog('槽位序号无效', 'warning');
+      return;
+    }
+    const target = data.slots[idx].name;
+    const actRes = await fetch(`${apiBaseUrl}/activate-slot`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: target })
+    });
+    const actData = await actRes.json();
+    if (actData.ok) {
+      addLog(`已切换到槽位: ${target}`, 'success');
+      refreshSlots();
+      checkEnvironment();
+    } else {
+      addLog(`切换槽位失败: ${actData.error || '未知错误'}`, 'error');
+    }
+  } catch (error) {
+    addLog(`切换槽位失败: ${error.message}`, 'error');
+  }
 }
 
 async function saveSlot() {

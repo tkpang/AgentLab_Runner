@@ -47,6 +47,20 @@ Windows（图形化安装器，推荐给小白用户）:
 scripts\setup-windows-gui.cmd
 ```
 
+Web GUI（跨平台，浏览器界面）:
+
+Linux / macOS:
+
+```bash
+bash scripts/start-web-gui.sh
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/start-web-gui.ps1
+```
+
 Windows（卸载本地工具，按需）:
 
 ```powershell
@@ -101,6 +115,7 @@ GUI 安装器支持：
 - 槽位数据保存在 `runner/.accounts/windows/<slot>/`
 - 本地凭证切换是“文件级切换”，切换后再启动 CLI 即生效
 - 仅适合你自己的机器使用（凭证文件不加密）
+- `runner/.accounts/` 已加入 `.gitignore`，不要把本机凭证提交到仓库
 
 说明：
 - `setup-*` 脚本会自动安装 runner 依赖（`npm install`），不需要再手工执行。
