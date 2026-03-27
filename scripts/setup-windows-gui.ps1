@@ -613,6 +613,21 @@ function LT([string]$key, [object[]]$fmtArgs = @()) {
   return $template
 }
 
+$script:hasConvertFromJsonDepth = $false
+try {
+  $cmd = Get-Command ConvertFrom-Json -ErrorAction Stop
+  $script:hasConvertFromJsonDepth = $cmd.Parameters.ContainsKey("Depth")
+} catch {
+  $script:hasConvertFromJsonDepth = $false
+}
+
+function ConvertFrom-JsonCompat([string]$jsonText, [int]$depth = 10) {
+  if ($script:hasConvertFromJsonDepth) {
+    return $jsonText | ConvertFrom-Json -Depth $depth
+  }
+  return $jsonText | ConvertFrom-Json
+}
+
 function Resolve-StepText([string]$stepId, [string]$fallback = "") {
   switch ($stepId) {
     "prepare" { return T "step_prepare" }
@@ -644,7 +659,7 @@ function Try-HandleGuiEvent([string]$line) {
   $json = $line.Substring(13)
   if ([string]::IsNullOrWhiteSpace($json)) { return $true }
   try {
-    $evt = $json | ConvertFrom-Json -Depth 8
+    $evt = ConvertFrom-JsonCompat $json 8
     $etype = [string]$evt.type
     switch ($etype) {
       "step" {
@@ -685,6 +700,12 @@ function Try-HandleGuiEvent([string]$line) {
         $btnCopyCodexUrl.Enabled = -not [string]::IsNullOrWhiteSpace($script:lastCodexLoginUrl)
         if (-not [string]::IsNullOrWhiteSpace($url)) {
           Add-Log (LT "log_codex_login_url" @($url))
+          try {
+            Start-Process -FilePath $url | Out-Null
+            Add-Log("Browser opened from GUI: $url")
+          } catch {
+            Add-Log("Open browser failed, please open manually: $url")
+          }
         }
         if (-not [string]::IsNullOrWhiteSpace($code)) {
           try { [System.Windows.Forms.Clipboard]::SetText($code) } catch {}
@@ -984,7 +1005,7 @@ function Invoke-SlotActionJson([string]$action, [string]$slot) {
     throw ("Invalid JSON response: " + $raw)
   }
   try {
-    $obj = $jsonText | ConvertFrom-Json
+    $obj = ConvertFrom-JsonCompat $jsonText 10
   }
   catch {
     throw ("Invalid JSON response: " + $jsonText)
@@ -1036,7 +1057,7 @@ function Refresh-QuotaStatus() {
     if ([string]::IsNullOrWhiteSpace($raw)) {
       throw "empty quota response"
     }
-    $obj = $raw | ConvertFrom-Json -Depth 10
+    $obj = ConvertFrom-JsonCompat $raw 10
     Apply-QuotaData $obj
     if ($obj.ok) {
       Add-Log (LT "log_quota_refreshed" @($obj.primary.remainingPercent, $obj.secondary.remainingPercent))
@@ -1236,7 +1257,7 @@ $btnOpenFolder.Add_Click({
 $btnCodexLogin.Add_Click({
   $script:lastCodexLoginUrl = ""
   $btnCopyCodexUrl.Enabled = $false
-  Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @("-OpenBrowser") -NonBlockingUi
+  Start-BackgroundScript (T "task_codex_device_login") $codexDeviceLoginScript @() -NonBlockingUi
 })
 
 $btnCopyCodexUrl.Add_Click({

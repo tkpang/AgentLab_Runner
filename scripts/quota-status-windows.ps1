@@ -4,6 +4,22 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+$script:hasConvertFromJsonDepth = $false
+try {
+  $cmd = Get-Command ConvertFrom-Json -ErrorAction Stop
+  $script:hasConvertFromJsonDepth = $cmd.Parameters.ContainsKey("Depth")
+}
+catch {
+  $script:hasConvertFromJsonDepth = $false
+}
+
+function ConvertFrom-JsonCompat([string]$jsonText, [int]$depth = 20) {
+  if ($script:hasConvertFromJsonDepth) {
+    return $jsonText | ConvertFrom-Json -Depth $depth
+  }
+  return $jsonText | ConvertFrom-Json
+}
+
 function Add-PathOnce([string]$path) {
   if ([string]::IsNullOrWhiteSpace($path)) { return }
   if (-not (Test-Path $path)) { return }
@@ -51,7 +67,7 @@ function Parse-CodexIdentity([string]$homeDir) {
     if (Test-Path $authPath) {
       $raw = Get-Content -Path $authPath -Raw
       if (-not [string]::IsNullOrWhiteSpace($raw)) {
-        $obj = $raw | ConvertFrom-Json -Depth 20
+        $obj = ConvertFrom-JsonCompat $raw 20
         $mail = Find-EmailValue $obj
         if (-not [string]::IsNullOrWhiteSpace($mail)) {
           $identity = $mail
@@ -158,7 +174,7 @@ setTimeout(() => {
     if ([string]::IsNullOrWhiteSpace($raw)) {
       throw "empty response from codex app-server probe"
     }
-    $obj = $raw | ConvertFrom-Json -Depth 20
+    $obj = ConvertFrom-JsonCompat $raw 20
     return $obj
   }
   finally {
