@@ -10,12 +10,20 @@ const GUI_DIR = __dirname;
 const ROOT_DIR = path.join(__dirname, '..');
 const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
 const IS_WIN = process.platform === 'win32';
+const RUNNER_BIN_PATHS = [
+  path.join(ROOT_DIR, '.runtime', 'node', 'current'),
+  path.join(ROOT_DIR, '.runtime', 'node', 'current', 'bin'),
+  path.join(ROOT_DIR, '.tools', 'npm-global'),
+  path.join(ROOT_DIR, '.tools', 'npm-global', 'bin'),
+  path.join(ROOT_DIR, '.tools', 'npm-global', 'node_modules', '.bin')
+];
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon'
 };
@@ -29,15 +37,25 @@ function exists(filePath) {
   }
 }
 
+function buildRunnerEnv(extraEnv = {}) {
+  const availableLocalPaths = RUNNER_BIN_PATHS.filter((p) => exists(p));
+  const currentPath = process.env.PATH || '';
+  return {
+    ...process.env,
+    ...extraEnv,
+    PATH: [...availableLocalPaths, currentPath].join(path.delimiter)
+  };
+}
+
 function commandExists(cmd) {
   const checker = IS_WIN ? 'where' : 'which';
-  const out = spawnSync(checker, [cmd], { stdio: 'ignore' });
+  const out = spawnSync(checker, [cmd], { stdio: 'ignore', env: buildRunnerEnv() });
   return out.status === 0;
 }
 
 function commandVersion(cmd) {
   if (!commandExists(cmd)) return '';
-  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8' });
+  const out = spawnSync(cmd, ['--version'], { encoding: 'utf8', env: buildRunnerEnv() });
   const text = `${out.stdout || ''}\n${out.stderr || ''}`.trim();
   return text.split(/\r?\n/)[0] || '';
 }
@@ -47,7 +65,8 @@ function runCommand(command, args = [], options = {}) {
     const proc = spawn(command, args, {
       cwd: ROOT_DIR,
       windowsHide: true,
-      ...options
+      ...options,
+      env: buildRunnerEnv(options.env || {})
     });
 
     let stdout = '';
@@ -69,7 +88,8 @@ function runDetached(command, args = [], options = {}) {
     detached: true,
     windowsHide: true,
     stdio: 'ignore',
-    ...options
+    ...options,
+    env: buildRunnerEnv(options.env || {})
   });
   proc.unref();
 }
@@ -140,31 +160,51 @@ function localAuthState() {
   const codex = {
     installed: codexInstalled,
     version: commandVersion('codex'),
-    loggedIn: Boolean(codexAuth && hasToken(codexAuth)),
+    loggedIn: Boolean((codexAuth && hasToken(codexAuth)) || process.env.OPENAI_API_KEY || process.env.OPENAI_TOKEN),
     email: codexAuth ? extractEmail(codexAuth) : '',
     authPath: path.join(home, '.codex', 'auth.json')
   };
 
   const claudePaths = [
     path.join(home, '.claude.json'),
+    path.join(home, '.claude', '.credentials.json'),
     path.join(home, '.claude', 'credentials.json'),
     path.join(home, '.claude', 'config.json')
   ];
   let claudeAuth = null;
+  let claudeAuthWithToken = null;
   for (const p of claudePaths) {
-    claudeAuth = readJsonSafe(p);
-    if (claudeAuth) break;
+    const parsed = readJsonSafe(p);
+    if (!parsed) continue;
+    if (!claudeAuth) {
+      claudeAuth = parsed;
+    }
+    if (hasToken(parsed)) {
+      claudeAuthWithToken = parsed;
+      break;
+    }
   }
+  const effectiveClaudeAuth = claudeAuthWithToken || claudeAuth;
 
   const claudeInstalled = commandExists('claude');
   const claude = {
     installed: claudeInstalled,
     version: commandVersion('claude'),
-    loggedIn: Boolean(claudeAuth && hasToken(claudeAuth)),
-    email: claudeAuth ? extractEmail(claudeAuth) : ''
+    loggedIn: Boolean((effectiveClaudeAuth && hasToken(effectiveClaudeAuth)) || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN),
+    email: effectiveClaudeAuth ? extractEmail(effectiveClaudeAuth) : ''
   };
 
   return { codex, claude };
+}
+
+function mergeToolState(localTool, scriptTool) {
+  if (!scriptTool || typeof scriptTool !== 'object') return localTool;
+  const merged = { ...localTool, ...scriptTool };
+  merged.installed = Boolean(localTool?.installed || scriptTool?.installed);
+  merged.loggedIn = Boolean(localTool?.loggedIn || scriptTool?.loggedIn);
+  merged.email = String(localTool?.email || scriptTool?.email || '');
+  merged.version = String(localTool?.version || scriptTool?.version || '');
+  return merged;
 }
 
 async function checkAuthHandler() {
@@ -186,8 +226,8 @@ async function checkAuthHandler() {
           return {
             ok: true,
             platform: process.platform,
-            codex: { ...local.codex, ...(json.codex || {}) },
-            claude: { ...local.claude, ...(json.claude || {}) }
+            codex: mergeToolState(local.codex, json.codex),
+            claude: mergeToolState(local.claude, json.claude)
           };
         }
       } catch {
@@ -204,79 +244,299 @@ async function checkAuthHandler() {
   };
 }
 
-async function quotaHandler() {
-  const auth = localAuthState();
+function normalizePercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.min(100, Math.max(0, Math.round(num)));
+}
 
-  if (IS_WIN) {
-    const scriptPath = path.join(SCRIPTS_DIR, 'quota-status-windows.ps1');
-    if (exists(scriptPath)) {
+function extractRemainingPercent(bucket) {
+  if (!bucket || typeof bucket !== 'object') return null;
+  const remainingDirect = normalizePercent(bucket.remainingPercent);
+  if (remainingDirect != null) return remainingDirect;
+  const used = normalizePercent(bucket.usedPercent);
+  if (used == null) return null;
+  return Math.max(0, 100 - used);
+}
+
+function parseCodexRateLimits(rateLimits) {
+  if (!rateLimits || typeof rateLimits !== 'object') {
+    return { quota5h: null, quota7d: null, quotaSupported: false };
+  }
+  const quota5h = extractRemainingPercent(rateLimits.primary);
+  const quota7d = extractRemainingPercent(rateLimits.secondary);
+  return {
+    quota5h,
+    quota7d,
+    quotaSupported: quota5h != null || quota7d != null
+  };
+}
+
+function fetchCodexRateLimitsViaAppServer() {
+  return new Promise((resolve) => {
+    if (!commandExists('codex')) {
+      resolve({ ok: false, error: 'codex not installed' });
+      return;
+    }
+
+    const initId = 'init-1';
+    const rateId = 'rate-1';
+    const proc = spawn('codex', ['app-server'], {
+      cwd: ROOT_DIR,
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: buildRunnerEnv()
+    });
+
+    let done = false;
+    let stdoutBuffer = '';
+    let stderrText = '';
+    const timeout = setTimeout(() => {
+      finish({ ok: false, error: 'timeout waiting codex rate limits' });
+    }, 15000);
+
+    function finish(result) {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      try { proc.stdin.end(); } catch {}
+      try { proc.kill(); } catch {}
+      resolve(result);
+    }
+
+    function send(payload) {
       try {
-        const result = await runCommand('powershell.exe', [
-          '-NoProfile',
-          '-ExecutionPolicy', 'Bypass',
-          '-File', scriptPath,
-          '-Json'
-        ]);
-        const json = parseFirstJson(result.stdout);
-        if (result.code === 0 && json && json.ok) {
-          return {
-            ok: true,
-            timestamp: json.refreshedAt || new Date().toLocaleString('zh-CN'),
-            codex: {
-              installed: auth.codex.installed,
-              loggedIn: auth.codex.loggedIn,
-              quota5h: json.primary ? json.primary.remainingPercent : 0,
-              quota7d: json.secondary ? json.secondary.remainingPercent : 0
-            },
-            claude: {
-              installed: auth.claude.installed,
-              loggedIn: auth.claude.loggedIn,
-              quota5h: 0,
-              quota7d: 0
-            }
-          };
+        proc.stdin.write(`${JSON.stringify(payload)}\n`);
+      } catch (error) {
+        finish({ ok: false, error: error.message || String(error) });
+      }
+    }
+
+    proc.on('error', (error) => {
+      finish({ ok: false, error: error.message || String(error) });
+    });
+
+    proc.stderr.on('data', (chunk) => {
+      stderrText += chunk.toString();
+    });
+
+    proc.stdout.on('data', (chunk) => {
+      stdoutBuffer += chunk.toString();
+      while (true) {
+        const breakPos = stdoutBuffer.indexOf('\n');
+        if (breakPos < 0) break;
+        const line = stdoutBuffer.slice(0, breakPos).trim();
+        stdoutBuffer = stdoutBuffer.slice(breakPos + 1);
+        if (!line) continue;
+
+        let msg;
+        try {
+          msg = JSON.parse(line);
+        } catch {
+          continue;
         }
-      } catch {
-        // ignore and fallback
+
+        if (msg?.id === initId && msg?.result) {
+          send({ method: 'initialized' });
+          send({ id: rateId, method: 'account/rateLimits/read' });
+          continue;
+        }
+
+        if (msg?.id === rateId) {
+          const rateLimits = msg?.result?.rateLimits || msg?.result || null;
+          finish({ ok: true, rateLimits });
+          return;
+        }
+      }
+    });
+
+    proc.on('close', (code) => {
+      if (done) return;
+      const codePart = Number.isInteger(code) ? ` (${code})` : '';
+      finish({ ok: false, error: (stderrText || `codex app-server exited${codePart}`).trim() });
+    });
+
+    send({
+      id: initId,
+      method: 'initialize',
+      params: {
+        clientInfo: {
+          name: 'agentlab-runner-gui',
+          title: 'AgentLab Runner GUI',
+          version: '1.0.0'
+        },
+        capabilities: {
+          experimentalApi: true
+        }
+      }
+    });
+  });
+}
+
+async function quotaHandler() {
+  const authPayload = await checkAuthHandler();
+  const auth = {
+    codex: authPayload?.codex || localAuthState().codex,
+    claude: authPayload?.claude || localAuthState().claude
+  };
+
+  const codexQuota = {
+    installed: Boolean(auth.codex.installed),
+    loggedIn: Boolean(auth.codex.loggedIn),
+    quota5h: null,
+    quota7d: null,
+    quotaSupported: false
+  };
+
+  const warnings = [];
+  let timestamp = new Date().toLocaleString('zh-CN');
+
+  if (codexQuota.installed && codexQuota.loggedIn) {
+    let parsedFromScript = false;
+
+    if (IS_WIN) {
+      const scriptPath = path.join(SCRIPTS_DIR, 'quota-status-windows.ps1');
+      if (exists(scriptPath)) {
+        try {
+          const result = await runCommand('powershell.exe', [
+            '-NoProfile',
+            '-ExecutionPolicy', 'Bypass',
+            '-File', scriptPath,
+            '-Json'
+          ]);
+          const json = parseFirstJson(result.stdout);
+          if (result.code === 0 && json && json.ok) {
+            const parsed = parseCodexRateLimits({
+              primary: json.primary || null,
+              secondary: json.secondary || null
+            });
+            codexQuota.quota5h = parsed.quota5h;
+            codexQuota.quota7d = parsed.quota7d;
+            codexQuota.quotaSupported = parsed.quotaSupported;
+            parsedFromScript = true;
+            if (json.refreshedAt) timestamp = json.refreshedAt;
+          } else {
+            warnings.push(json?.error || result.stderr || 'Windows quota script failed');
+          }
+        } catch (error) {
+          warnings.push(error.message || String(error));
+        }
+      }
+    }
+
+    if (!parsedFromScript || !codexQuota.quotaSupported) {
+      const probe = await fetchCodexRateLimitsViaAppServer();
+      if (probe.ok) {
+        const parsed = parseCodexRateLimits(probe.rateLimits);
+        codexQuota.quota5h = parsed.quota5h;
+        codexQuota.quota7d = parsed.quota7d;
+        codexQuota.quotaSupported = parsed.quotaSupported;
+      } else if (probe.error) {
+        warnings.push(probe.error);
       }
     }
   }
 
-  return {
-    ok: true,
-    timestamp: new Date().toLocaleString('zh-CN'),
-    codex: {
-      installed: auth.codex.installed,
-      loggedIn: auth.codex.loggedIn,
-      quota5h: 0,
-      quota7d: 0
-    },
-    claude: {
-      installed: auth.claude.installed,
-      loggedIn: auth.claude.loggedIn,
-      quota5h: 0,
-      quota7d: 0
-    },
-    warning: IS_WIN ? '未获取到额度详细数据' : 'Linux 暂未接入额度查询，先显示登录状态。'
+  const claudeQuota = {
+    installed: Boolean(auth.claude.installed),
+    loggedIn: Boolean(auth.claude.loggedIn),
+    quota5h: null,
+    quota7d: null,
+    quotaSupported: false
   };
+
+  const payload = {
+    ok: true,
+    timestamp,
+    codex: codexQuota,
+    claude: claudeQuota
+  };
+  if (warnings.length) {
+    payload.warning = warnings.join(' | ');
+  }
+  return payload;
 }
 
 async function installHandler() {
+  return installByTools({ codex: true, claude: true });
+}
+
+function shQuote(input) {
+  return `'${String(input).replace(/'/g, `'\\''`)}'`;
+}
+
+async function uninstallHandler(body) {
+  const tool = String(body?.tool || '').trim().toLowerCase();
+  if (!['codex', 'claude'].includes(tool)) {
+    return { ok: false, error: 'Invalid tool, expected codex or claude' };
+  }
+
   if (IS_WIN) {
-    const scriptPath = path.join(SCRIPTS_DIR, 'setup-windows.ps1');
-    runDetached('powershell.exe', [
+    const scriptPath = path.join(SCRIPTS_DIR, 'uninstall-windows.ps1');
+    const args = [
       '-NoProfile',
       '-ExecutionPolicy', 'Bypass',
-      '-File', scriptPath,
-      '-InstallCodex',
-      '-InstallClaude'
+      '-File', scriptPath
+    ];
+    if (tool === 'codex') args.push('-RemoveCodex');
+    if (tool === 'claude') args.push('-RemoveClaude');
+    runDetached('powershell.exe', args);
+    return { ok: true, message: `Windows ${tool} 卸载任务已启动` };
+  }
+
+  const npmPrefix = path.join(ROOT_DIR, '.tools', 'npm-global');
+  const packageName = tool === 'codex' ? '@openai/codex' : '@anthropic-ai/claude-code';
+  const binPrefix = tool === 'codex' ? 'codex' : 'claude';
+  const cmd = [
+    `PREFIX=${shQuote(npmPrefix)}`,
+    `if command -v npm >/dev/null 2>&1; then npm uninstall -g --prefix "$PREFIX" ${packageName} --no-audit --fund=false --progress=false || true; fi`,
+    `rm -f "$PREFIX/bin/${binPrefix}"* || true`,
+    `rm -f "$PREFIX/node_modules/.bin/${binPrefix}"* || true`
+  ].join(' ; ');
+  runDetached('bash', ['-lc', cmd]);
+  return { ok: true, message: `Linux ${tool} 卸载任务已启动` };
+}
+
+async function installCodexHandler() {
+  return installByTools({ codex: true, claude: false });
+}
+
+async function installClaudeHandler() {
+  return installByTools({ codex: false, claude: true });
+}
+
+async function installByTools({ codex, claude }) {
+  const installCodex = Boolean(codex);
+  const installClaude = Boolean(claude);
+  if (!installCodex && !installClaude) {
+    return { ok: false, error: 'No tool selected for install' };
+  }
+
+  if (IS_WIN) {
+    const scriptPath = path.join(SCRIPTS_DIR, 'setup-windows.ps1');
+    const args = [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath
+    ];
+    if (installCodex) args.push('-InstallCodex');
+    if (installClaude) args.push('-InstallClaude');
+    runDetached('powershell.exe', [
+      ...args
     ]);
-    return { ok: true, message: 'Windows 安装任务已启动' };
+    if (installCodex && installClaude) return { ok: true, message: 'Windows 安装任务已启动（Codex + Claude）' };
+    if (installCodex) return { ok: true, message: 'Windows Codex 安装任务已启动' };
+    return { ok: true, message: 'Windows Claude 安装任务已启动' };
   }
 
   const scriptPath = path.join(SCRIPTS_DIR, 'setup-ubuntu.sh');
-  runDetached('bash', [scriptPath]);
-  return { ok: true, message: 'Linux 安装脚本已启动（可能需要 sudo）' };
+  const args = [scriptPath];
+  if (installCodex) args.push('--codex');
+  if (installClaude) args.push('--claude');
+  runDetached('bash', args);
+  if (installCodex && installClaude) return { ok: true, message: 'Linux 安装脚本已启动（Codex + Claude）' };
+  if (installCodex) return { ok: true, message: 'Linux Codex 安装脚本已启动' };
+  return { ok: true, message: 'Linux Claude 安装脚本已启动' };
 }
 
 async function loginCodexHandler() {
@@ -415,6 +675,30 @@ async function activateSlotHandler(body) {
   return json;
 }
 
+async function deleteSlotHandler(body) {
+  const slotName = String((body && body.name) || '').trim();
+  if (!slotName) return { ok: false, error: 'Slot name required' };
+
+  if (!IS_WIN) {
+    return { ok: false, error: 'Linux 暂未接入账号槽位删除。' };
+  }
+
+  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-windows.ps1');
+  const result = await runCommand('powershell.exe', [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-File', scriptPath,
+    '-Action', 'delete',
+    '-Slot', slotName,
+    '-Json'
+  ]);
+  const json = parseFirstJson(result.stdout);
+  if (!json) {
+    return { ok: false, error: result.stderr || 'Failed to delete slot' };
+  }
+  return json;
+}
+
 function openBrowser(url) {
   if (IS_WIN) {
     exec(`start "" "${url}"`);
@@ -451,13 +735,17 @@ const apiHandlers = {
   '/api/check-auth': checkAuthHandler,
   '/api/quota': quotaHandler,
   '/api/install': installHandler,
+  '/api/install-codex': installCodexHandler,
+  '/api/install-claude': installClaudeHandler,
+  '/api/uninstall': uninstallHandler,
   '/api/login-codex': loginCodexHandler,
   '/api/login-claude': loginClaudeHandler,
   '/api/open-shell': openShellHandler,
   '/api/start-runner': startRunnerHandler,
   '/api/slots': slotsListHandler,
   '/api/save-slot': saveSlotHandler,
-  '/api/activate-slot': activateSlotHandler
+  '/api/activate-slot': activateSlotHandler,
+  '/api/delete-slot': deleteSlotHandler
 };
 
 const server = http.createServer(async (req, res) => {

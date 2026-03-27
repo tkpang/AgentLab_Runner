@@ -10,8 +10,8 @@
   <!-- Custom Title Bar -->
   <div class="titlebar">
     <div class="titlebar-drag">
-      <span class="app-icon">🤖</span>
-      <span class="app-title">AgentLab Runner - 控制面板</span>
+      <span class="title-brand-mark">A</span>
+      <span class="app-title">AgentLab Runner</span>
       <span class="app-version">v1.0</span>
     </div>
     <div class="titlebar-buttons">
@@ -21,56 +21,93 @@
   </div>
 
   <div class="container">
+    <section class="runner-hero panel">
+      <div class="runner-hero-title">
+        <span class="brand-mark">A</span>
+        <div>
+          <h1>AgentLab Runner</h1>
+        </div>
+      </div>
+      <div class="runner-hero-meta">
+        <span class="meta-pill">Local Worker</span>
+        <span class="meta-pill">Codex / Claude</span>
+      </div>
+    </section>
+
     <!-- Environment Status & Quick Actions -->
-    <section class="env-quick-section">
+    <section class="env-quick-section panel">
       <div class="section-header-inline">
-        <h2>🔧 环境状态 & 快捷操作</h2>
+        <h2>环境状态与操作</h2>
         <button class="btn-check-small" onclick="checkEnvironment()">检测环境</button>
       </div>
       <div class="env-grid">
-        <div class="env-cell">
-          <div class="env-icon codex-bg">📦</div>
+        <div class="env-cell tool-cell" id="codexToolCell">
+          <div class="tool-menu-wrap" id="codexMenuWrap">
+            <button class="tool-menu-trigger" id="codexMenuTrigger" onclick="toggleToolMenu('codex', event)" aria-label="Codex 菜单">⋯</button>
+            <div class="tool-menu" id="codexMenu">
+              <button type="button" id="codexMenuSwitch" onclick="toolMenuAction('codex', 'switch')">切换账号</button>
+              <button type="button" id="codexMenuUninstall" onclick="toolMenuAction('codex', 'uninstall')">卸载</button>
+            </div>
+          </div>
+          <div class="env-icon codex-bg"><img src="assets/brands/openai.svg" alt="OpenAI" class="env-brand-icon" /></div>
           <div class="env-name">Codex</div>
-          <div class="env-status" id="codexInstallStatus">未检测</div>
-          <div class="env-status" id="codexAuthStatus">未检测</div>
-          <button class="btn-cell" onclick="loginCodex()" id="btnCodexLogin">登录</button>
+          <div class="env-status-row">
+            <span class="env-status-label">安装</span>
+            <span class="status-pill neutral" id="codexInstallStatus">未检测</span>
+          </div>
+          <div class="env-status-row">
+            <span class="env-status-label">认证</span>
+            <span class="status-pill neutral" id="codexAuthStatus">未检测</span>
+          </div>
+          <div class="env-action-row single" id="codexActionRow">
+            <button class="btn-cell btn-cell-primary" onclick="toolPrimaryAction('codex')" id="btnCodexPrimary">安装</button>
+          </div>
         </div>
-        <div class="env-cell">
-          <div class="env-icon claude-bg">🔶</div>
+        <div class="env-cell tool-cell" id="claudeToolCell">
+          <div class="tool-menu-wrap" id="claudeMenuWrap">
+            <button class="tool-menu-trigger" id="claudeMenuTrigger" onclick="toggleToolMenu('claude', event)" aria-label="Claude 菜单">⋯</button>
+            <div class="tool-menu" id="claudeMenu">
+              <button type="button" id="claudeMenuSwitch" onclick="toolMenuAction('claude', 'switch')">切换账号</button>
+              <button type="button" id="claudeMenuUninstall" onclick="toolMenuAction('claude', 'uninstall')">卸载</button>
+            </div>
+          </div>
+          <div class="env-icon claude-bg"><img src="assets/brands/claude.svg" alt="Claude" class="env-brand-icon" /></div>
           <div class="env-name">Claude</div>
-          <div class="env-status" id="claudeInstallStatus">未检测</div>
-          <div class="env-status" id="claudeAuthStatus">未检测</div>
-          <button class="btn-cell" onclick="loginClaude()" id="btnClaudeLogin">登录</button>
-        </div>
-        <div class="env-cell">
-          <div class="env-icon install-bg">📦</div>
-          <div class="env-name">安装环境</div>
-          <div class="env-desc">一键安装</div>
-          <div class="env-desc">Codex & Claude</div>
-          <button class="btn-cell" onclick="installEnvironment()">点击安装</button>
+          <div class="env-status-row">
+            <span class="env-status-label">安装</span>
+            <span class="status-pill neutral" id="claudeInstallStatus">未检测</span>
+          </div>
+          <div class="env-status-row">
+            <span class="env-status-label">认证</span>
+            <span class="status-pill neutral" id="claudeAuthStatus">未检测</span>
+          </div>
+          <div class="env-action-row single" id="claudeActionRow">
+            <button class="btn-cell btn-cell-primary" onclick="toolPrimaryAction('claude')" id="btnClaudePrimary">安装</button>
+          </div>
         </div>
         <div class="env-cell">
           <div class="env-icon runner-bg">🚀</div>
           <div class="env-name">启动 Runner</div>
-          <div class="env-desc">启动主程序</div>
-          <div class="env-desc">&nbsp;</div>
-          <button class="btn-cell" onclick="startRunner()">点击启动</button>
+          <div class="env-desc">使用当前凭证启动</div>
+          <div class="env-desc">如未登录请先登录</div>
+          <button class="btn-cell btn-cell-success" onclick="startRunner()">点击启动</button>
         </div>
       </div>
     </section>
 
     <!-- Quota Section -->
-    <section class="quota-compact-section">
+    <section class="quota-compact-section panel">
       <div class="section-header-inline">
-        <h2>📊 额度余量</h2>
+        <h2>额度余量</h2>
         <button class="btn-check-small" onclick="refreshQuota()">刷新额度</button>
       </div>
+      <div class="quota-empty-hint" id="quotaEmptyHint" style="display: none;">当前无可展示额度：请先安装并登录对应工具，且该工具支持额度查询。</div>
       
       <!-- Codex Quota -->
       <div class="quota-compact-card" id="codexQuotaCard" style="display: none;">
         <div class="quota-compact-header">
           <div class="quota-tool-info">
-            <span class="quota-icon">🤖</span>
+            <span class="quota-icon quota-icon-brand"><img src="assets/brands/openai.svg" alt="OpenAI" class="quota-brand-icon" /></span>
             <span class="quota-name">Codex</span>
           </div>
           <span class="quota-badge" id="codexQuotaBadge">未检测</span>
@@ -97,7 +134,7 @@
       <div class="quota-compact-card" id="claudeQuotaCard" style="display: none;">
         <div class="quota-compact-header">
           <div class="quota-tool-info">
-            <span class="quota-icon">🔶</span>
+            <span class="quota-icon quota-icon-brand"><img src="assets/brands/claude.svg" alt="Claude" class="quota-brand-icon" /></span>
             <span class="quota-name">Claude Code</span>
           </div>
           <span class="quota-badge" id="claudeQuotaBadge">未检测</span>
@@ -122,27 +159,44 @@
     </section>
 
     <!-- Account Management -->
-    <section class="account-compact-section">
+    <section class="account-compact-section panel">
       <div class="account-inline">
-        <h2>👥 账号管理</h2>
+        <h2>账号管理</h2>
         <div class="account-controls">
           <span class="account-current">当前槽位: <strong id="currentSlot">--</strong></span>
           <button class="btn-account" onclick="refreshSlots()">刷新槽位</button>
-          <button class="btn-account" onclick="manageSlots()">切换槽位</button>
-          <button class="btn-account" onclick="saveSlot()">保存槽位</button>
+          <button class="btn-account" onclick="manageSlots()">管理槽位</button>
         </div>
       </div>
+      <div class="account-hint" id="slotHint">槽位用法：1) 先登录 Codex/Claude；2) 点“管理槽位”并保存为槽位名；3) 之后可在槽位间一键切换。</div>
     </section>
 
     <!-- Log Section -->
-    <section class="log-compact-section">
-      <h2>📝 操作日志</h2>
+    <section class="log-compact-section panel">
+      <h2>操作日志</h2>
       <div class="log-container-compact" id="logContainer">
         <div class="log-entry">欢迎使用 AgentLab Runner 控制面板</div>
       </div>
     </section>
   </div>
 
-  <script src="app-v2.js"></script>
+  <div class="slot-modal-overlay" id="slotManagerModal" aria-hidden="true">
+    <div class="slot-modal" role="dialog" aria-modal="true" aria-label="账号槽位管理">
+      <div class="slot-modal-header">
+        <h3>账号槽位管理</h3>
+        <button type="button" class="btn-slot-close" id="slotModalClose">✕</button>
+      </div>
+      <div class="slot-modal-status info" id="slotModalStatus">准备就绪</div>
+      <div class="slot-modal-tip">先登录 -> 保存为槽位（如 account-work）-> 需要换号时点击“启用”。</div>
+      <div class="slot-modal-create">
+        <input type="text" class="slot-input" id="slotNameInput" placeholder="输入槽位名称，例如 account-2" />
+        <button type="button" class="btn-account" id="slotSaveBtn">保存当前账号</button>
+        <button type="button" class="btn-account" id="slotRefreshBtn">刷新列表</button>
+      </div>
+      <div class="slot-list" id="slotList"></div>
+    </div>
+  </div>
+
+  <script type="module" src="app-v2.js"></script>
 </body>
 </html>
