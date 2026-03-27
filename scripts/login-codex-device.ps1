@@ -77,32 +77,38 @@ function Try-OpenBrowser([string]$targetUrl) {
   }
 }
 
-function Emit-AuthIfReady() {
-  if ($script:authEventSent) { return }
-
+function Emit-AuthUpdate([switch]$Force) {
   $resolvedUrl = if ([string]::IsNullOrWhiteSpace($script:url)) { $script:fallbackUrl } else { $script:url }
-  if ($script:OpenBrowser.IsPresent) {
-    $script:browserOpened = Try-OpenBrowser $resolvedUrl
+  $changed = $false
+
+  if (-not $script:urlAnnounced -and -not [string]::IsNullOrWhiteSpace($resolvedUrl)) {
+    if ($script:OpenBrowser.IsPresent -and -not $script:browserTried) {
+      $script:browserOpened = Try-OpenBrowser $resolvedUrl
+      $script:browserTried = $true
+    }
+    Write-Output ("[login] Open this URL manually if browser did not open: " + $resolvedUrl)
+    $script:urlAnnounced = $true
+    $changed = $true
   }
 
-  Write-Output ("[login] Open this URL manually if browser did not open: " + $resolvedUrl)
-
-  if (-not [string]::IsNullOrWhiteSpace($script:code)) {
+  if (-not $script:codeAnnounced -and -not [string]::IsNullOrWhiteSpace($script:code)) {
     try {
       Set-Clipboard -Value $script:code
-      Write-Host ("[login] Device code copied: " + $script:code)
+      Write-Output ("[login] Device code copied: " + $script:code)
     } catch {
-      Write-Host ("[login] Device code: " + $script:code)
+      Write-Output ("[login] Device code: " + $script:code)
+    }
+    $script:codeAnnounced = $true
+    $changed = $true
+  }
+
+  if ($Force.IsPresent -or $changed) {
+    Emit-Event -type "codex_device_auth" -payload @{
+      url = $resolvedUrl
+      code = $script:code
+      browserOpened = $script:browserOpened
     }
   }
-
-  Emit-Event -type "codex_device_auth" -payload @{
-    url = $resolvedUrl
-    code = $script:code
-    browserOpened = $script:browserOpened
-  }
-
-  $script:authEventSent = $true
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -125,7 +131,9 @@ $rawLines = New-Object System.Collections.Generic.List[string]
 $script:url = ""
 $script:code = ""
 $script:browserOpened = $false
-$script:authEventSent = $false
+$script:browserTried = $false
+$script:urlAnnounced = $false
+$script:codeAnnounced = $false
 $script:fallbackUrl = "https://auth.openai.com/codex/device"
 
 try {
@@ -148,25 +156,21 @@ try {
       if (-not [string]::IsNullOrWhiteSpace($c)) { $script:code = $c }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($script:url)) {
-      Emit-AuthIfReady
-    }
+    Emit-AuthUpdate
   }
 } catch {
   Write-Host ("[login] codex login failed: " + $_.Exception.Message) -ForegroundColor Red
   exit 1
 }
 
-if (-not $script:authEventSent) {
-  $allText = Strip-Ansi ($rawLines -join "`n")
-  if ([string]::IsNullOrWhiteSpace($script:url)) {
-    $script:url = Try-ExtractUrl $allText
-  }
-  if ([string]::IsNullOrWhiteSpace($script:code)) {
-    $script:code = Try-ExtractCode $allText
-  }
-  Emit-AuthIfReady
+$allText = Strip-Ansi ($rawLines -join "`n")
+if ([string]::IsNullOrWhiteSpace($script:url)) {
+  $script:url = Try-ExtractUrl $allText
 }
+if ([string]::IsNullOrWhiteSpace($script:code)) {
+  $script:code = Try-ExtractCode $allText
+}
+Emit-AuthUpdate -Force
 
 if ([string]::IsNullOrWhiteSpace($script:url)) {
   $script:url = $script:fallbackUrl
