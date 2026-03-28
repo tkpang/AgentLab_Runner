@@ -19,9 +19,10 @@
 
 - 触发方式：
   - 推送 tag：`runner-v<version>`（例如 `runner-v0.2.0`）会自动构建并发布 Release。
-  - 手动触发：`Actions -> Release Runner (Windows) -> Run workflow`（只产出构建产物）。
+  - 手动触发：`Actions -> Release Runner (Windows + Linux) -> Run workflow`（只产出构建产物）。
 - 产物：
   - `AgentLab-Runner-<version>-windows-x64.zip`
+  - `AgentLab-Runner-<version>-linux-x64.tar.gz`
   - 解压后直接双击 `AgentLab Runner.exe` 启动。
 
 本地打包命令（Windows）：
@@ -66,6 +67,18 @@ git push origin runner-v1.0.0
 
 完成后到 `runner` 仓库的 `Actions` 或 `Releases` 页面查看产物：
 - `AgentLab-Runner-<version>-windows-x64.zip`
+- `AgentLab-Runner-<version>-linux-x64.tar.gz`
+
+### 自动验证建议
+
+- 已提供跨平台冒烟测试：`.github/workflows/smoke-test.yml`
+  - `windows-latest`：启动 `start.ps1 -GuiMode web`，检测 `http://127.0.0.1:18765/` 是否可达
+  - `ubuntu-latest`：启动 `start.sh`，检测 `http://127.0.0.1:18765/` 是否可达
+
+本地验证建议：
+- Linux：优先用 Docker 跑冒烟测试（方便、快）
+- Windows GUI/Electron：优先用 VM（Hyper-V / VMware / VirtualBox）
+  - Windows 容器不适合做 Electron 桌面 GUI 测试
 
 ## 快速开始
 

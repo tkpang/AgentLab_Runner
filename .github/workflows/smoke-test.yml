@@ -1,0 +1,50 @@
+name: Runner Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "runner-v*"
+  pull_request:
+
+jobs:
+  smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Smoke test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash ./start.sh
+          sleep 6
+          curl -fsS http://127.0.0.1:18765/ >/dev/null
+          bash ./stop.sh
+
+      - name: Smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          try {
+            powershell -NoProfile -ExecutionPolicy Bypass -File .\start.ps1 -GuiMode web
+            Start-Sleep -Seconds 6
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:18765/" -UseBasicParsing -TimeoutSec 10
+            if ($resp.StatusCode -ne 200) {
+              throw "Unexpected status code: $($resp.StatusCode)"
+            }
+          } finally {
+            powershell -NoProfile -ExecutionPolicy Bypass -File .\stop.ps1
+          }
