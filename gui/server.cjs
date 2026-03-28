@@ -22,6 +22,7 @@ const RUNNER_BIN_PATHS = [
   path.join(ROOT_DIR, '.tools', 'npm-global', 'bin'),
   path.join(ROOT_DIR, '.tools', 'npm-global', 'node_modules', '.bin')
 ];
+let cachedGlobalRunnerBinPaths = null;
 
 const mimeTypes = {
   '.html': 'text/html; charset=utf-8',
@@ -48,6 +49,62 @@ function ensureDir(dirPath) {
   } catch {
     // ignore
   }
+}
+
+function listVsCodeCodexBinDirs() {
+  if (!IS_WIN) return [];
+  const home = os.homedir();
+  const extensionRoots = [
+    path.join(home, '.vscode', 'extensions'),
+    path.join(home, '.vscode-insiders', 'extensions'),
+  ];
+  const dirs = [];
+  for (const root of extensionRoots) {
+    if (!exists(root)) continue;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (!entry.name.startsWith('openai.chatgpt-')) continue;
+      const binDir = path.join(root, entry.name, 'bin', 'windows-x86_64');
+      const exePath = path.join(binDir, 'codex.exe');
+      if (exists(exePath)) {
+        dirs.push(binDir);
+      }
+    }
+  }
+  return dirs;
+}
+
+function globalRunnerBinPaths() {
+  if (cachedGlobalRunnerBinPaths) return cachedGlobalRunnerBinPaths;
+  if (!IS_WIN) {
+    cachedGlobalRunnerBinPaths = [];
+    return cachedGlobalRunnerBinPaths;
+  }
+
+  const candidates = [
+    path.join(process.env.APPDATA || '', 'npm'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'nodejs'),
+    path.join(process.env.ProgramFiles || '', 'nodejs'),
+    ...listVsCodeCodexBinDirs(),
+  ];
+  const unique = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (!exists(candidate)) continue;
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(candidate);
+  }
+  cachedGlobalRunnerBinPaths = unique;
+  return cachedGlobalRunnerBinPaths;
 }
 
 function defaultRunnerConfig() {
@@ -89,11 +146,12 @@ function saveRunnerConfig(input) {
 
 function buildRunnerEnv(extraEnv = {}) {
   const availableLocalPaths = RUNNER_BIN_PATHS.filter((p) => exists(p));
+  const availableGlobalPaths = globalRunnerBinPaths();
   const currentPath = process.env.PATH || '';
   return {
     ...process.env,
     ...extraEnv,
-    PATH: [...availableLocalPaths, currentPath].join(path.delimiter)
+    PATH: [...availableLocalPaths, ...availableGlobalPaths, currentPath].join(path.delimiter)
   };
 }
 
