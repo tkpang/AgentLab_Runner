@@ -1,5 +1,7 @@
 import os from 'os';
 import process from 'process';
+import fs from 'fs';
+import path from 'path';
 import { spawn } from 'child_process';
 import { ClaudeCodeAdapter } from './adapters/claude-code.js';
 import { CodexAdapter } from './adapters/codex.js';
@@ -31,6 +33,50 @@ const RUNNER_ID = String(process.env.RUNNER_ID || `${os.hostname()}-${process.pi
 const HELLO_INTERVAL_MS = Math.max(10_000, Number.parseInt(process.env.RUNNER_HELLO_INTERVAL_MS || '30000', 10) || 30000);
 const CONTROL_POLL_MS = Math.max(500, Number.parseInt(process.env.RUNNER_CONTROL_POLL_MS || '1200', 10) || 1200);
 const HEALTH_INTERVAL_MS = Math.max(20_000, Number.parseInt(process.env.RUNNER_HEALTH_INTERVAL_MS || '60000', 10) || 60000);
+const WORKSPACE_REFRESH_MS = Math.max(30_000, Number.parseInt(process.env.RUNNER_WORKSPACE_REFRESH_MS || '300000', 10) || 300000);
+const QUOTA_REFRESH_MS = Math.max(30_000, Number.parseInt(process.env.RUNNER_QUOTA_REFRESH_MS || '180000', 10) || 180000);
+
+type RunnerQuotaWindow = {
+  quota5h: number | null;
+  quota7d: number | null;
+  quotaSupported: boolean;
+};
+
+type RunnerToolQuota = RunnerQuotaWindow & {
+  installed: boolean;
+  loggedIn: boolean;
+  version: string;
+  error: string | null;
+};
+
+type RunnerQuotaSnapshot = {
+  checkedAt: string;
+  codex: RunnerToolQuota;
+  claude: RunnerToolQuota;
+};
+
+type RunnerWorkspaceCandidate = {
+  id: string;
+  label: string;
+  runtime: 'native' | 'wsl';
+  platform: 'linux' | 'windows' | 'macos' | 'other';
+  pathStyle: 'posix' | 'windows';
+  cwd: string;
+  homeDir: string;
+  tempDir: string;
+  suggestedWorkDir: string;
+};
+
+type RunnerWorkspaceSnapshot = {
+  checkedAt: string;
+  defaultWorkDir: string;
+  primaryCandidateId: string;
+  inWsl: boolean;
+  candidates: RunnerWorkspaceCandidate[];
+};
+
+let workspaceCache: { expiresAt: number; value: RunnerWorkspaceSnapshot } | null = null;
+let quotaCache: { expiresAt: number; value: RunnerQuotaSnapshot } | null = null;
 
 if (!TOKEN) {
   console.error('Missing RUNNER_TOKEN');
@@ -67,7 +113,539 @@ function detectPlatform(): 'linux' | 'windows' | 'macos' | 'other' {
   return 'other';
 }
 
+function safeReadJson(filePath: string): Record<string, unknown> | null {
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, 'utf8');
+    if (!raw.trim()) return null;
+    const parsed = JSON.parse(raw);
+    return (parsed && typeof parsed === 'object') ? parsed as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function walkFind(obj: unknown, predicate: (k: string, v: unknown) => boolean): unknown {
+  if (obj == null) return null;
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = walkFind(item, predicate);
+      if (found != null) return found;
+    }
+    return null;
+  }
+  if (typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (predicate(k, v)) return v;
+      const found = walkFind(v, predicate);
+      if (found != null) return found;
+    }
+  }
+  return null;
+}
+
+function readCodexAuthToken(): string {
+  const authPath = path.join(os.homedir(), '.codex', 'auth.json');
+  const auth = safeReadJson(authPath);
+  if (!auth) return '';
+  const tokens = (auth.tokens && typeof auth.tokens === 'object')
+    ? auth.tokens as Record<string, unknown>
+    : null;
+  if (tokens) {
+    const direct = ['access_token', 'id_token', 'refresh_token']
+      .map((key) => typeof tokens[key] === 'string' ? String(tokens[key]).trim() : '')
+      .find(Boolean);
+    if (direct) return direct;
+  }
+  const fallback = walkFind(auth, (k, v) => {
+    if (typeof v !== 'string' || !v.trim()) return false;
+    const key = k.toLowerCase();
+    return key.includes('token') || key.includes('key');
+  });
+  return typeof fallback === 'string' ? fallback.trim() : '';
+}
+
+function readClaudeOauthToken(): string {
+  const envToken = String(process.env.CLAUDE_CODE_OAUTH_TOKEN || '').trim();
+  if (envToken) return envToken;
+  const home = os.homedir();
+  const candidatePaths = [
+    path.join(home, '.claude', '.credentials.json'),
+    path.join(home, '.claude', 'credentials.json'),
+    path.join(home, '.claude', 'config.json'),
+    path.join(home, '.claude.json'),
+    path.join(home, '.config', 'claude', 'credentials.json'),
+  ];
+  for (const filePath of candidatePaths) {
+    const credentials = safeReadJson(filePath);
+    if (!credentials) continue;
+    const nestedOauth = credentials.claudeAiOauth && typeof credentials.claudeAiOauth === 'object'
+      ? credentials.claudeAiOauth as Record<string, unknown>
+      : null;
+    const nestedToken = nestedOauth && typeof nestedOauth.accessToken === 'string'
+      ? String(nestedOauth.accessToken).trim()
+      : '';
+    if (nestedToken) return nestedToken;
+    const flatToken = typeof credentials.accessToken === 'string' ? String(credentials.accessToken).trim() : '';
+    if (flatToken) return flatToken;
+    const fallbackToken = walkFind(credentials, (k, v) => {
+      if (typeof v !== 'string' || !v.trim()) return false;
+      const key = k.toLowerCase();
+      return key === 'accesstoken' || key === 'oauth_token' || key === 'oauthtoken';
+    });
+    if (typeof fallbackToken === 'string' && fallbackToken.trim()) {
+      return fallbackToken.trim();
+    }
+  }
+  return '';
+}
+
+function normalizePercent(value: unknown): number | null {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.min(100, Math.max(0, Math.round(num)));
+}
+
+function extractRemainingPercent(bucket: unknown): number | null {
+  if (!bucket || typeof bucket !== 'object') return null;
+  const target = bucket as Record<string, unknown>;
+  const remainingDirect = normalizePercent(target.remainingPercent);
+  if (remainingDirect != null) return remainingDirect;
+  const used = normalizePercent(target.usedPercent);
+  if (used == null) return null;
+  return Math.max(0, 100 - used);
+}
+
+function parsePercentFromUtilization(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value <= 1 ? normalizePercent(value * 100) : normalizePercent(value);
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const normalized = trimmed.endsWith('%') ? trimmed.slice(0, -1).trim() : trimmed;
+    const parsed = Number.parseFloat(normalized);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed <= 1 ? normalizePercent(parsed * 100) : normalizePercent(parsed);
+  }
+  return null;
+}
+
+function parseClaudeUsageWindow(value: unknown): { usedPercent: number; remainingPercent: number } | null {
+  if (!value || typeof value !== 'object') return null;
+  const target = value as Record<string, unknown>;
+  const utilization = target.utilization ?? target.used_percentage ?? target.percent_used ?? target.usage;
+  const usedPercent = parsePercentFromUtilization(utilization);
+  if (usedPercent == null) return null;
+  return {
+    usedPercent,
+    remainingPercent: Math.max(0, 100 - usedPercent),
+  };
+}
+
+function parseCodexRateLimits(rateLimits: unknown): RunnerQuotaWindow {
+  if (!rateLimits || typeof rateLimits !== 'object') {
+    return { quota5h: null, quota7d: null, quotaSupported: false };
+  }
+  const limits = rateLimits as Record<string, unknown>;
+  const primary = limits.primary && typeof limits.primary === 'object' ? limits.primary as Record<string, unknown> : null;
+  const secondary = limits.secondary && typeof limits.secondary === 'object' ? limits.secondary as Record<string, unknown> : null;
+  const quota5h = extractRemainingPercent(primary);
+  const quota7d = extractRemainingPercent(secondary);
+  return {
+    quota5h,
+    quota7d,
+    quotaSupported: quota5h != null || quota7d != null,
+  };
+}
+
+function isWslRuntime(): boolean {
+  if (process.platform !== 'linux') return false;
+  if (String(process.env.WSL_DISTRO_NAME || '').trim()) return true;
+  try {
+    const versionText = fs.readFileSync('/proc/version', 'utf8').toLowerCase();
+    return versionText.includes('microsoft');
+  } catch {
+    return false;
+  }
+}
+
+function normalizeWorkDirByPlatform(raw: string, platform: ReturnType<typeof detectPlatform>): string {
+  if (!raw) return raw;
+  if (platform === 'windows') {
+    const replaced = raw.replace(/\//g, '\\');
+    return path.win32.normalize(replaced);
+  }
+  return path.posix.normalize(raw.replace(/\\/g, '/'));
+}
+
+function defaultWorkDirForPlatform(platform: ReturnType<typeof detectPlatform>): string {
+  const fromEnv = String(process.env.RUNNER_DEFAULT_WORKDIR || '').trim();
+  if (fromEnv) return normalizeWorkDirByPlatform(fromEnv, platform);
+  if (platform === 'windows') {
+    return path.win32.join(os.homedir(), 'agentlab-runner');
+  }
+  return path.posix.join(os.homedir(), 'agentlab-runner');
+}
+
+async function listWslCandidates(): Promise<RunnerWorkspaceCandidate[]> {
+  if (process.platform !== 'win32') return [];
+  const listResult = await runCommand('wsl.exe', ['-l', '-q'], 6000);
+  if (!listResult.ok || !listResult.output.trim()) return [];
+  const distros = listResult.output
+    .split(/\r?\n/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const candidates: RunnerWorkspaceCandidate[] = [];
+  for (const distro of distros) {
+    const homeResult = await runCommand('wsl.exe', ['-d', distro, 'sh', '-lc', 'printf "%s" "$HOME"'], 7000);
+    const cwdResult = await runCommand('wsl.exe', ['-d', distro, 'sh', '-lc', 'pwd'], 7000);
+    const homeDir = homeResult.ok && homeResult.output.trim() ? homeResult.output.trim() : '/home';
+    const cwd = cwdResult.ok && cwdResult.output.trim() ? cwdResult.output.trim() : homeDir;
+    const suggested = path.posix.join(homeDir, 'agentlab-runner');
+    candidates.push({
+      id: `wsl:${distro}`,
+      label: `WSL (${distro})`,
+      runtime: 'wsl',
+      platform: 'linux',
+      pathStyle: 'posix',
+      cwd,
+      homeDir,
+      tempDir: '/tmp',
+      suggestedWorkDir: suggested,
+    });
+  }
+  return candidates;
+}
+
+async function collectWorkspaceSnapshot(): Promise<RunnerWorkspaceSnapshot> {
+  const platform = detectPlatform();
+  const native: RunnerWorkspaceCandidate = {
+    id: 'native',
+    label: platform === 'windows' ? 'Windows (native)' : (isWslRuntime() ? 'Linux (WSL runtime)' : `${platform} (native)`),
+    runtime: isWslRuntime() ? 'wsl' : 'native',
+    platform,
+    pathStyle: platform === 'windows' ? 'windows' : 'posix',
+    cwd: process.cwd(),
+    homeDir: os.homedir(),
+    tempDir: os.tmpdir(),
+    suggestedWorkDir: defaultWorkDirForPlatform(platform),
+  };
+  const candidates: RunnerWorkspaceCandidate[] = [native];
+  if (platform === 'windows') {
+    const wslCandidates = await listWslCandidates();
+    if (wslCandidates.length > 0) {
+      candidates.push(...wslCandidates);
+    }
+  }
+  return {
+    checkedAt: new Date().toISOString(),
+    defaultWorkDir: native.suggestedWorkDir,
+    primaryCandidateId: native.id,
+    inWsl: isWslRuntime(),
+    candidates,
+  };
+}
+
+function shouldFallbackToRunnerDefaultWorkDir(workDir: string, platform: ReturnType<typeof detectPlatform>): boolean {
+  const normalized = workDir.trim();
+  if (!normalized) return true;
+  if (platform === 'windows') {
+    if (normalized.startsWith('/')) return true;
+    if (/^~\//.test(normalized)) return true;
+  } else {
+    if (/^[A-Za-z]:[\\/]/.test(normalized)) return true;
+  }
+  return false;
+}
+
+function ensureDirectory(pathValue: string): boolean {
+  try {
+    if (!pathValue) return false;
+    fs.mkdirSync(pathValue, { recursive: true });
+    return fs.existsSync(pathValue) && fs.statSync(pathValue).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function resolveRunnerWorkDir(configuredWorkDir: string): string {
+  const platform = detectPlatform();
+  const runnerDefault = defaultWorkDirForPlatform(platform);
+  let candidate = configuredWorkDir.trim();
+  if (shouldFallbackToRunnerDefaultWorkDir(candidate, platform)) {
+    candidate = runnerDefault;
+  } else {
+    candidate = normalizeWorkDirByPlatform(candidate, platform);
+  }
+
+  if (!ensureDirectory(candidate)) {
+    if (ensureDirectory(runnerDefault)) return runnerDefault;
+    return os.tmpdir();
+  }
+  return candidate;
+}
+
+async function getWorkspaceSnapshotCached(): Promise<RunnerWorkspaceSnapshot> {
+  const now = Date.now();
+  if (workspaceCache && workspaceCache.expiresAt > now) {
+    return workspaceCache.value;
+  }
+  const value = await collectWorkspaceSnapshot();
+  workspaceCache = { value, expiresAt: now + WORKSPACE_REFRESH_MS };
+  return value;
+}
+
+async function requestClaudeOauthUsage(timeoutMs = 10000): Promise<Record<string, unknown>> {
+  const token = readClaudeOauthToken();
+  if (!token) throw new Error('Claude OAuth token missing');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'anthropic-beta': 'oauth-2025-04-20',
+        'Content-Type': 'application/json',
+      },
+      signal: controller.signal,
+    });
+    const bodyText = await response.text();
+    let body: Record<string, unknown> | null = null;
+    try {
+      const parsed = JSON.parse(bodyText);
+      if (parsed && typeof parsed === 'object') {
+        body = parsed as Record<string, unknown>;
+      }
+    } catch {
+      body = null;
+    }
+    if (!response.ok) {
+      const retryAfter = response.headers.get('retry-after');
+      const detail = String(bodyText || '').slice(0, 240);
+      throw new Error(`Claude usage HTTP ${response.status}${retryAfter ? `, Retry-After=${retryAfter}` : ''}${detail ? `, body=${detail}` : ''}`);
+    }
+    if (!body) {
+      throw new Error('Claude usage response is not JSON object');
+    }
+    return body;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Claude usage timeout (${timeoutMs}ms)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestClaudeOauthUsageWithRetry(): Promise<Record<string, unknown>> {
+  try {
+    return await requestClaudeOauthUsage();
+  } catch (firstErr) {
+    const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    if (msg.includes('HTTP ')) throw firstErr;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return requestClaudeOauthUsage();
+  }
+}
+
+async function fetchCodexRateLimitsViaAppServer(): Promise<{ ok: boolean; rateLimits?: unknown; error?: string }> {
+  const initId = 'init-1';
+  const rateId = 'rate-1';
+
+  return new Promise((resolve) => {
+    const proc = spawn('codex', ['app-server'], {
+      cwd: process.cwd(),
+      windowsHide: true,
+      shell: process.platform === 'win32',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let done = false;
+    let stdoutBuffer = '';
+    let stderrText = '';
+    const timeout = setTimeout(() => {
+      finish({ ok: false, error: 'timeout waiting codex rate limits' });
+    }, 15000);
+
+    function finish(result: { ok: boolean; rateLimits?: unknown; error?: string }) {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      try { proc.stdin.end(); } catch {}
+      try { proc.kill(); } catch {}
+      resolve(result);
+    }
+
+    function send(payload: Record<string, unknown>) {
+      try {
+        proc.stdin.write(`${JSON.stringify(payload)}\n`);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        finish({ ok: false, error: msg });
+      }
+    }
+
+    proc.on('error', (error) => {
+      const msg = error instanceof Error ? error.message : String(error);
+      finish({ ok: false, error: msg });
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderrText += chunk.toString();
+    });
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString();
+      while (true) {
+        const breakPos = stdoutBuffer.indexOf('\n');
+        if (breakPos < 0) break;
+        const line = stdoutBuffer.slice(0, breakPos).trim();
+        stdoutBuffer = stdoutBuffer.slice(breakPos + 1);
+        if (!line) continue;
+
+        let msg: Record<string, unknown> | null = null;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed && typeof parsed === 'object') {
+            msg = parsed as Record<string, unknown>;
+          }
+        } catch {
+          msg = null;
+        }
+        if (!msg) continue;
+
+        if (msg.id === initId && msg.result) {
+          send({ method: 'initialized' });
+          send({ id: rateId, method: 'account/rateLimits/read' });
+          continue;
+        }
+
+        if (msg.id === rateId) {
+          const resultObj = (msg.result && typeof msg.result === 'object')
+            ? msg.result as Record<string, unknown>
+            : null;
+          const rateLimits = resultObj?.rateLimits || resultObj || null;
+          finish({ ok: true, rateLimits });
+          return;
+        }
+      }
+    });
+
+    proc.on('close', (code) => {
+      if (done) return;
+      const codePart = Number.isInteger(code) ? ` (${code})` : '';
+      finish({ ok: false, error: (stderrText || `codex app-server exited${codePart}`).trim() });
+    });
+
+    send({
+      id: initId,
+      method: 'initialize',
+      params: {
+        clientInfo: {
+          name: 'agentlab-runner-daemon',
+          title: 'AgentLab Runner',
+          version: '1.0.0',
+        },
+        capabilities: {
+          experimentalApi: true,
+        },
+      },
+    });
+  });
+}
+
+async function collectQuotaSnapshot(): Promise<RunnerQuotaSnapshot> {
+  const codexVersion = await runCommand('codex', ['--version'], 6000);
+  const claudeVersion = await runCommand('claude', ['--version'], 6000);
+  const codexLoggedIn = Boolean(readCodexAuthToken() || process.env.OPENAI_API_KEY || process.env.OPENAI_TOKEN);
+  const claudeLoggedIn = Boolean(readClaudeOauthToken() || process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+
+  const codex: RunnerToolQuota = {
+    installed: codexVersion.ok,
+    loggedIn: codexLoggedIn,
+    version: codexVersion.output || '',
+    quota5h: null,
+    quota7d: null,
+    quotaSupported: false,
+    error: null,
+  };
+
+  if (codex.installed && codex.loggedIn) {
+    const probe = await fetchCodexRateLimitsViaAppServer();
+    if (probe.ok) {
+      const parsed = parseCodexRateLimits(probe.rateLimits || null);
+      codex.quota5h = parsed.quota5h;
+      codex.quota7d = parsed.quota7d;
+      codex.quotaSupported = parsed.quotaSupported;
+      if (!codex.quotaSupported) {
+        codex.error = 'Codex quota response has no recognized windows';
+      }
+    } else {
+      codex.error = probe.error || 'Codex quota probe failed';
+    }
+  } else if (!codex.installed) {
+    codex.error = 'Codex not installed';
+  } else {
+    codex.error = 'Codex not logged in';
+  }
+
+  const claude: RunnerToolQuota = {
+    installed: claudeVersion.ok,
+    loggedIn: claudeLoggedIn,
+    version: claudeVersion.output || '',
+    quota5h: null,
+    quota7d: null,
+    quotaSupported: false,
+    error: null,
+  };
+
+  if (claude.installed && claude.loggedIn) {
+    try {
+      const usage = await requestClaudeOauthUsageWithRetry();
+      const usageObj = usage as Record<string, unknown>;
+      const fiveHour = parseClaudeUsageWindow(usageObj.five_hour);
+      const sevenDay = parseClaudeUsageWindow(usageObj.seven_day);
+      claude.quota5h = fiveHour ? fiveHour.remainingPercent : null;
+      claude.quota7d = sevenDay ? sevenDay.remainingPercent : null;
+      claude.quotaSupported = claude.quota5h != null || claude.quota7d != null;
+      if (!claude.quotaSupported) {
+        claude.error = 'Claude usage returned no recognized windows';
+      }
+    } catch (err) {
+      claude.error = err instanceof Error ? err.message : String(err);
+    }
+  } else if (!claude.installed) {
+    claude.error = 'Claude not installed';
+  } else {
+    claude.error = 'Claude not logged in';
+  }
+
+  return {
+    checkedAt: new Date().toISOString(),
+    codex,
+    claude,
+  };
+}
+
+async function getQuotaSnapshotCached(): Promise<RunnerQuotaSnapshot> {
+  const now = Date.now();
+  if (quotaCache && quotaCache.expiresAt > now) {
+    return quotaCache.value;
+  }
+  const value = await collectQuotaSnapshot();
+  quotaCache = { value, expiresAt: now + QUOTA_REFRESH_MS };
+  return value;
+}
+
 async function hello(): Promise<void> {
+  const workspace = await getWorkspaceSnapshotCached();
   await apiPost('/api/runner/hello', {
     hello: {
       runnerId: RUNNER_ID,
@@ -78,6 +656,8 @@ async function hello(): Promise<void> {
       cwd: process.cwd(),
       pid: process.pid,
       ts: new Date().toISOString(),
+      workspace,
+      recommendedWorkDir: workspace.defaultWorkDir,
     },
   });
 }
@@ -86,6 +666,8 @@ async function runCommand(command: string, args: string[], timeoutMs = 8000): Pr
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+      windowsHide: true,
       env: { ...process.env },
     });
     let stdout = '';
@@ -120,6 +702,8 @@ async function collectHealthSnapshot(): Promise<Record<string, unknown>> {
   const claudeVersion = await runCommand('claude', ['--version'], 6000);
   const codexModels = codexVersion.ok ? await runCommand('codex', ['models'], 7000) : { ok: false, output: 'skipped' };
   const claudeModels = claudeVersion.ok ? await runCommand('claude', ['models'], 7000) : { ok: false, output: 'skipped' };
+  const workspace = await getWorkspaceSnapshotCached();
+  const quota = await getQuotaSnapshotCached();
 
   return {
     checkedAt: new Date().toISOString(),
@@ -140,6 +724,8 @@ async function collectHealthSnapshot(): Promise<Record<string, unknown>> {
         modelsProbeOk: claudeModels.ok,
       },
     },
+    workspace,
+    quota,
   };
 }
 
@@ -215,8 +801,16 @@ async function executeJob(job: RunnerJobClaim): Promise<void> {
       await postOutput(job.id, payload);
     };
 
+    const nextAdapterConfig = { ...job.adapterConfig };
+    const originalWorkDir = typeof nextAdapterConfig.workDir === 'string' ? String(nextAdapterConfig.workDir).trim() : '';
+    const resolvedWorkDir = resolveRunnerWorkDir(originalWorkDir);
+    nextAdapterConfig.workDir = resolvedWorkDir;
+    if (originalWorkDir !== resolvedWorkDir) {
+      await emitRunnerLog('info', `job=${job.id} remap workDir "${originalWorkDir || '(empty)'}" -> "${resolvedWorkDir}"`);
+    }
+
     const result: AdapterRunResult = await adapter.run(job.prompt, {
-      ...job.adapterConfig,
+      ...nextAdapterConfig,
       _envOverrides: job.runtimeEnv || {},
       _agentId: job.agentId,
       _heartbeatId: job.heartbeatId,
