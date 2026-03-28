@@ -16,6 +16,8 @@ $appData = $env:APPDATA
 $knownTargets = @(
   @{ tool = "codex"; key = "codex_auth"; path = (Join-Path $homeDir ".codex/auth.json") },
   @{ tool = "codex"; key = "codex_config"; path = (Join-Path $homeDir ".codex/config.json") },
+  @{ tool = "codex"; key = "codex_config_toml"; path = (Join-Path $homeDir ".codex/config.toml") },
+  @{ tool = "codex"; key = "codex_cap_sid"; path = (Join-Path $homeDir ".codex/cap_sid") },
   @{ tool = "claude"; key = "claude_home_json"; path = (Join-Path $homeDir ".claude.json") },
   @{ tool = "claude"; key = "claude_config"; path = (Join-Path $homeDir ".claude/config.json") },
   @{ tool = "claude"; key = "claude_credentials"; path = (Join-Path $homeDir ".claude/credentials.json") },
@@ -112,7 +114,7 @@ function To-AbsoluteTargetPath([string]$relativePath) {
 
 function Write-Result([object]$obj) {
   if ($Json.IsPresent) {
-    $obj | ConvertTo-Json -Depth 8
+    $obj | ConvertTo-Json -Depth 8 -Compress
     return
   }
   $obj | Format-List | Out-String | Write-Output
@@ -190,14 +192,7 @@ function Activate-Slot([string]$slotName) {
     throw "Slot has no saved files: $slotName"
   }
 
-  foreach ($target in $knownTargets) {
-    if ([string]::IsNullOrWhiteSpace($target.path)) { continue }
-    if (Test-Path $target.path) {
-      Remove-Item -Path $target.path -Force -ErrorAction SilentlyContinue
-    }
-  }
-
-  $restored = @()
+  $restorePlan = @()
   $storedFiles = Get-ChildItem -Path $filesDir -Recurse -File -ErrorAction SilentlyContinue
   foreach ($f in $storedFiles) {
     $rel = $f.FullName.Substring($filesDir.Length).TrimStart('\', '/')
@@ -207,10 +202,29 @@ function Activate-Slot([string]$slotName) {
     catch {
       continue
     }
-    $targetDir = Split-Path -Parent $targetPath
+    $restorePlan += [PSCustomObject]@{
+      source = $f.FullName
+      target = $targetPath
+    }
+  }
+
+  if ($restorePlan.Count -le 0) {
+    throw "Slot has no credential files: $slotName"
+  }
+
+  foreach ($target in $knownTargets) {
+    if ([string]::IsNullOrWhiteSpace($target.path)) { continue }
+    if (Test-Path $target.path) {
+      Remove-Item -Path $target.path -Force -ErrorAction SilentlyContinue
+    }
+  }
+
+  $restored = @()
+  foreach ($item in $restorePlan) {
+    $targetDir = Split-Path -Parent $item.target
     Ensure-Dir $targetDir
-    Copy-Item -Path $f.FullName -Destination $targetPath -Force
-    $restored += $targetPath
+    Copy-Item -Path $item.source -Destination $item.target -Force
+    $restored += $item.target
   }
 
   Set-ActiveSlot $slotName
@@ -320,7 +334,7 @@ catch {
     error = $_.Exception.Message
   }
   if ($Json.IsPresent) {
-    $errorObj | ConvertTo-Json -Depth 6
+    $errorObj | ConvertTo-Json -Depth 6 -Compress
   }
   else {
     Write-Host ("[account-slots] failed: " + $_.Exception.Message) -ForegroundColor Red

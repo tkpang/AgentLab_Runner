@@ -265,6 +265,10 @@ RUNNER_SERVER="http://127.0.0.1:3200" RUNNER_TOKEN="xxxx" bash runner/scripts/st
 - `RUNNER_TOKEN`: 必填，Runner Token
 - `RUNNER_ID`: 可选，Runner 唯一标识
 - `RUNNER_CODEX_EXECUTION_MODE`: `auto` / `sandboxed` / `unsafe`
+- `RUNNER_EXTERNAL_TASK_SCAN_ENABLED`: 外部任务扫描总开关（`1/0`，默认 `1`）
+- `RUNNER_EXTERNAL_TASK_SCAN_CODEX`: 是否扫描 Codex 外部任务（`1/0`，默认 `1`）
+- `RUNNER_EXTERNAL_TASK_SCAN_CLAUDE`: 是否扫描 Claude 外部任务（`1/0`，默认 `0`，可快速关闭噪音来源）
+- `RUNNER_EXTERNAL_TASK_FILTER_NOISE`: 是否过滤 queue-operation 等噪音会话（`1/0`，默认 `1`）
 
 ## 认证说明
 

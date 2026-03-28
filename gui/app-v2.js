@@ -514,15 +514,32 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 
   setTimeout(() => {
-    loadRunnerConfig().then((cfg) => {
+    (async () => {
+      const cfg = await loadRunnerConfig();
       if (cfg?.autoStart) {
         addLog('自动启动已开启，正在尝试拉起 Runner...', 'info');
-        startRunner();
+        await startRunner();
+      } else {
+        // Keep explicit-start semantics: when auto-start is disabled, opening GUI should not keep runner connected.
+        const runtime = await refreshRunnerRuntimeStatus(false);
+        if (runtime?.runner?.running) {
+          addLog('检测到后台 Runner 正在运行，自动启动已关闭，正在停止后台 Runner...', 'warning');
+          try {
+            const data = await apiPost('/stop-runner');
+            addLog(data?.message || '后台 Runner 已停止。请手动点击“启动”连接。', data?.ok ? 'success' : 'warning');
+          } catch (error) {
+            addLog(`停止后台 Runner 失败: ${error.message}`, 'error');
+          }
+          await refreshRunnerRuntimeStatus(false);
+        }
       }
+      refreshAllStatus();
+      pollRunnerLogs();
+    })().catch(() => {
+      refreshAllStatus();
+      refreshRunnerRuntimeStatus(false);
+      pollRunnerLogs();
     });
-    refreshAllStatus();
-    refreshRunnerRuntimeStatus(false);
-    pollRunnerLogs();
   }, 500);
 
   setInterval(() => {

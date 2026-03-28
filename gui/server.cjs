@@ -144,6 +144,55 @@ function saveRunnerConfig(input) {
   return next;
 }
 
+function detectRunnerPlatform() {
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return 'macos';
+  if (process.platform === 'linux') return 'linux';
+  return process.platform || 'other';
+}
+
+function normalizeWorkDirByPlatform(raw, platform) {
+  if (!raw) return '';
+  if (platform === 'windows') {
+    return path.win32.normalize(String(raw).replace(/\//g, '\\'));
+  }
+  return path.posix.normalize(String(raw).replace(/\\/g, '/'));
+}
+
+function defaultWorkDirForPlatform(platform) {
+  const fromEnv = String(process.env.RUNNER_DEFAULT_WORKDIR || '').trim();
+  if (fromEnv) return normalizeWorkDirByPlatform(fromEnv, platform);
+  if (platform === 'windows') {
+    return path.win32.join(os.homedir(), 'agentlab-runner');
+  }
+  return path.posix.join(os.homedir(), 'agentlab-runner');
+}
+
+function collectWorkspaceSnapshotForHello() {
+  const platform = detectRunnerPlatform();
+  const pathStyle = platform === 'windows' ? 'windows' : 'posix';
+  const defaultWorkDir = defaultWorkDirForPlatform(platform);
+  return {
+    checkedAt: new Date().toISOString(),
+    defaultWorkDir,
+    primaryCandidateId: 'native',
+    inWsl: false,
+    candidates: [
+      {
+        id: 'native',
+        label: platform === 'windows' ? 'Windows (native)' : `${platform} (native)`,
+        runtime: 'native',
+        platform,
+        pathStyle,
+        cwd: process.cwd(),
+        homeDir: os.homedir(),
+        tempDir: os.tmpdir(),
+        suggestedWorkDir: defaultWorkDir,
+      }
+    ]
+  };
+}
+
 function buildRunnerEnv(extraEnv = {}) {
   const availableLocalPaths = RUNNER_BIN_PATHS.filter((p) => exists(p));
   const availableGlobalPaths = globalRunnerBinPaths();
@@ -235,7 +284,38 @@ function runDetached(command, args = [], options = {}) {
 }
 
 function parseFirstJson(text) {
-  const lines = String(text || '').split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+  const raw = String(text || '').replace(/^\uFEFF/, '').trim();
+  if (!raw) return null;
+
+  // First try full payload (PowerShell ConvertTo-Json defaults to multi-line output).
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // ignore and fallback
+  }
+
+  // Then try extracting the largest JSON object/array segment from mixed logs.
+  const candidates = [];
+  const startBrace = raw.indexOf('{');
+  const endBrace = raw.lastIndexOf('}');
+  if (startBrace >= 0 && endBrace > startBrace) {
+    candidates.push(raw.slice(startBrace, endBrace + 1));
+  }
+  const startBracket = raw.indexOf('[');
+  const endBracket = raw.lastIndexOf(']');
+  if (startBracket >= 0 && endBracket > startBracket) {
+    candidates.push(raw.slice(startBracket, endBracket + 1));
+  }
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // ignore
+    }
+  }
+
+  // Backward-compatible fallback: line-by-line single-line JSON parsing.
+  const lines = raw.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
   for (let i = lines.length - 1; i >= 0; i -= 1) {
     const line = lines[i];
     if (!line.startsWith('{') && !line.startsWith('[')) continue;
@@ -1018,10 +1098,11 @@ function sleep(ms) {
 async function stopRunnerHandler() {
   const pidFile = path.join(RUN_DIR, 'runner.pid');
   const pid = readPidFromFile(pidFile);
+  const runnerPatterns = ['agentlab-runner.ts', 'start-runner.ps1'];
   let hadRunningProcess = false;
   let stoppedByPid = false;
 
-  if (isPidRunning(pid)) {
+  if (isPidRunning(pid) && pidMatchesProcessPatterns(pid, runnerPatterns, true)) {
     hadRunningProcess = true;
     try {
       process.kill(pid);
@@ -1032,6 +1113,13 @@ async function stopRunnerHandler() {
       stoppedByPid = true;
     } catch {
       // ignore and fallback below
+    }
+  } else if (isPidRunning(pid) && pid > 0) {
+    // PID file points to a different process; treat as stale and do not kill unrelated process.
+    try {
+      fs.unlinkSync(pidFile);
+    } catch {
+      // ignore
     }
   }
 
@@ -1049,9 +1137,16 @@ async function stopRunnerHandler() {
     // ignore
   }
 
-  const runningAfter = isPidRunning(readPidFromFile(pidFile));
-  if (runningAfter) {
-    return { ok: false, error: 'Runner 停止失败，请手动检查进程。' };
+  const postPid = readPidFromFile(pidFile);
+  const runningAfterByPid = isPidRunning(postPid) && pidMatchesProcessPatterns(postPid, runnerPatterns, true);
+  const runningAfterDetectedPid = detectPidByPatterns(['agentlab-runner.ts', 'start-runner.ps1']);
+  if (runningAfterByPid || runningAfterDetectedPid > 0) {
+    return {
+      ok: false,
+      error: runningAfterDetectedPid > 0
+        ? `Runner 停止失败，检测到仍有进程在运行 (pid=${runningAfterDetectedPid})。`
+        : 'Runner 停止失败，请手动检查进程。',
+    };
   }
 
   if (hadRunningProcess || stoppedByPid) {
@@ -1093,6 +1188,49 @@ function writePidFile(pidPath, pid) {
   }
 }
 
+function readProcessCommandLine(pid) {
+  if (!Number.isFinite(pid) || pid <= 0) return '';
+  if (IS_WIN) {
+    const script = [
+      `$id=${Math.trunc(pid)}`,
+      "$proc = Get-CimInstance Win32_Process -Filter (\"ProcessId=\" + $id) -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty CommandLine",
+      "if ($proc) { Write-Output $proc }"
+    ].join('; ');
+    try {
+      const out = spawnSync('powershell.exe', ['-NoProfile', '-Command', script], {
+        encoding: 'utf8',
+        windowsHide: true,
+        env: buildRunnerEnv(),
+      });
+      return String(out.stdout || '').trim();
+    } catch {
+      return '';
+    }
+  }
+  try {
+    const out = spawnSync('bash', ['-lc', `ps -o command= -p ${Math.trunc(pid)} | head -n 1`], {
+      encoding: 'utf8',
+      env: buildRunnerEnv(),
+    });
+    return String(out.stdout || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function pidMatchesProcessPatterns(pid, patterns = [], requireRoot = true) {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  const cmd = readProcessCommandLine(pid);
+  if (!cmd) return false;
+  const cmdLower = cmd.toLowerCase();
+  if (requireRoot && !cmdLower.includes(ROOT_DIR.toLowerCase())) return false;
+  for (const pattern of patterns) {
+    const item = String(pattern || '').trim().toLowerCase();
+    if (item && cmdLower.includes(item)) return true;
+  }
+  return false;
+}
+
 function detectPidByPatterns(patterns = []) {
   const safePatterns = patterns
     .map((x) => String(x || '').trim())
@@ -1106,9 +1244,11 @@ function detectPidByPatterns(patterns = []) {
       `$root='${rootEscaped}'.ToLower()`,
       `$patterns=@(${quotedPatterns})`,
       "$proc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+      "  if ([int]$_.ProcessId -eq $PID) { return $false }",
       "  $cmd = [string]$_.CommandLine",
       "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
       "  $cmdLower = $cmd.ToLower()",
+      "  if ($cmdLower.Contains('get-ciminstance win32_process')) { return $false }",
       "  if ($cmdLower -notlike ('*' + $root + '*')) { return $false }",
       "  foreach ($p in $patterns) { if ($cmdLower.Contains($p.ToLower())) { return $true } }",
       "  return $false",
@@ -1140,9 +1280,11 @@ function killRunnerDaemonFallback() {
       `$root='${rootEscaped}'.ToLower()`,
       "$patterns=@('agentlab-runner.ts','start-runner.ps1')",
       "$targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {",
+      "  if ([int]$_.ProcessId -eq $PID) { return $false }",
       "  $cmd = [string]$_.CommandLine",
       "  if ([string]::IsNullOrWhiteSpace($cmd)) { return $false }",
       "  $cmdLower = $cmd.ToLower()",
+      "  if ($cmdLower.Contains('get-ciminstance win32_process')) { return $false }",
       "  if ($cmdLower -notlike ('*' + $root + '*')) { return $false }",
       "  foreach ($p in $patterns) { if ($cmdLower.Contains($p)) { return $true } }",
       "  return $false",
@@ -1176,16 +1318,36 @@ function killRunnerDaemonFallback() {
 function getRunnerRuntimeStatus() {
   const runnerPidPath = path.join(RUN_DIR, 'runner.pid');
   const guiPidPath = path.join(RUN_DIR, 'gui.pid');
+  const runnerPatterns = ['agentlab-runner.ts', 'start-runner.ps1'];
+  const guiPatterns = [
+    'gui\\server.cjs',
+    'gui/server.cjs',
+    'electron-main.cjs',
+    'electron\\dist\\electron.exe',
+    'npx-cli.js" electron .',
+    'node_modules\\.bin\\..\\electron\\cli.js',
+    'start-web-gui.ps1',
+    'start-desktop-gui.ps1'
+  ];
 
   let runnerPid = readPidFromFile(runnerPidPath);
   let guiPid = readPidFromFile(guiPidPath);
 
-  let runnerRunning = isPidRunning(runnerPid);
-  let guiRunning = isPidRunning(guiPid);
+  let runnerRunning = isPidRunning(runnerPid) && pidMatchesProcessPatterns(runnerPid, runnerPatterns, true);
+  let guiRunning = isPidRunning(guiPid) && pidMatchesProcessPatterns(guiPid, guiPatterns, true);
+
+  if (!runnerRunning && runnerPid > 0) {
+    try { fs.unlinkSync(runnerPidPath); } catch { /* ignore */ }
+    runnerPid = 0;
+  }
+  if (!guiRunning && guiPid > 0) {
+    try { fs.unlinkSync(guiPidPath); } catch { /* ignore */ }
+    guiPid = 0;
+  }
 
   if (!runnerRunning) {
-    const detectedRunnerPid = detectPidByPatterns(['agentlab-runner.ts', 'start-runner.ps1']);
-    if (detectedRunnerPid > 0) {
+    const detectedRunnerPid = detectPidByPatterns(runnerPatterns);
+    if (detectedRunnerPid > 0 && pidMatchesProcessPatterns(detectedRunnerPid, runnerPatterns, true)) {
       runnerPid = detectedRunnerPid;
       runnerRunning = true;
       writePidFile(runnerPidPath, detectedRunnerPid);
@@ -1193,17 +1355,8 @@ function getRunnerRuntimeStatus() {
   }
 
   if (!guiRunning) {
-    const detectedGuiPid = detectPidByPatterns([
-      'gui\\server.cjs',
-      'gui/server.cjs',
-      'electron-main.cjs',
-      'electron\\dist\\electron.exe',
-      'npx-cli.js" electron .',
-      'node_modules\\.bin\\..\\electron\\cli.js',
-      'start-web-gui.ps1',
-      'start-desktop-gui.ps1'
-    ]);
-    if (detectedGuiPid > 0) {
+    const detectedGuiPid = detectPidByPatterns(guiPatterns);
+    if (detectedGuiPid > 0 && pidMatchesProcessPatterns(detectedGuiPid, guiPatterns, true)) {
       guiPid = detectedGuiPid;
       guiRunning = true;
       writePidFile(guiPidPath, detectedGuiPid);
@@ -1255,6 +1408,7 @@ async function testRunnerConnectionHandler(body) {
   const serverUrl = (serverRaw || readRunnerConfig().server || '').replace(/\/+$/, '');
   const token = tokenRaw || readRunnerConfig().token;
   const runnerId = runnerIdRaw || readRunnerConfig().runnerId || `${os.hostname()}-probe`;
+  const workspace = collectWorkspaceSnapshotForHello();
 
   if (!serverUrl) return { ok: false, error: '缺少 Server 地址' };
   if (!token) return { ok: false, error: '缺少 Runner Token' };
@@ -1271,10 +1425,12 @@ async function testRunnerConnectionHandler(body) {
         hello: {
           runnerId,
           host: os.hostname(),
-          platform: process.platform,
+          platform: detectRunnerPlatform(),
           node: process.version,
           ts: new Date().toISOString(),
-          source: 'agentlab-runner-gui'
+          source: 'agentlab-runner-gui',
+          workspace,
+          recommendedWorkDir: workspace.defaultWorkDir,
         }
       })
     });
