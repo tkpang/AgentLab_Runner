@@ -43,6 +43,8 @@ if (-not (Test-Path $entryTs)) {
 Add-PathOnce (Join-Path $runnerRoot ".runtime/node/current")
 Add-PathOnce (Join-Path $runnerRoot ".tools/npm-global")
 Add-PathOnce (Join-Path $runnerRoot ".tools/npm-global/node_modules/.bin")
+Add-PathOnce (Join-Path $env:ProgramFiles "nodejs")
+Add-PathOnce (Join-Path $env:LOCALAPPDATA "Programs/nodejs")
 
 if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
   Write-Host "npx not found. Please run setup-windows.ps1 first." -ForegroundColor Red

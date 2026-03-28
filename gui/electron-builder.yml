@@ -1,0 +1,37 @@
+appId: com.agentlab.runner
+productName: AgentLab Runner
+artifactName: AgentLab-Runner-${version}-${os}-${arch}.${ext}
+directories:
+  output: dist
+asar: false
+files:
+  - "**/*"
+  - "!dist/**"
+  - "!node_modules/.cache/**"
+  - "!*.log"
+extraResources:
+  - from: ../scripts
+    to: scripts
+  - from: ../src
+    to: src
+  - from: ../start.ps1
+    to: start.ps1
+  - from: ../restart.ps1
+    to: restart.ps1
+  - from: ../stop.ps1
+    to: stop.ps1
+  - from: ../start.sh
+    to: start.sh
+  - from: ../restart.sh
+    to: restart.sh
+  - from: ../stop.sh
+    to: stop.sh
+  - from: ../package.json
+    to: package.json
+win:
+  icon: icon.png
+  signAndEditExecutable: false
+  target:
+    - target: dir
+      arch:
+        - x64

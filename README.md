@@ -13,6 +13,60 @@
 - Windows 宿主机 SSH 开启 + Linux 虚拟机连接排障：
   - `runner/docs/windows-host-ssh-from-linux-vm.md`
 
+## Release（Windows 一键启动 EXE）
+
+已提供 GitHub Actions 流水线：`.github/workflows/release-windows.yml`
+
+- 触发方式：
+  - 推送 tag：`runner-v<version>`（例如 `runner-v0.2.0`）会自动构建并发布 Release。
+  - 手动触发：`Actions -> Release Runner (Windows) -> Run workflow`（只产出构建产物）。
+- 产物：
+  - `AgentLab-Runner-<version>-windows-x64.zip`
+  - 解压后直接双击 `AgentLab Runner.exe` 启动。
+
+本地打包命令（Windows）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-release-windows.ps1
+```
+
+### Git 命令（可直接执行）
+
+以下命令适用于“`runner` 作为 submodule 挂在主仓”的常见流程。
+
+1) 在 `runner` 子仓提交并推送改动（包含 workflow）：
+
+```powershell
+cd runner
+git checkout main
+git pull --ff-only origin main
+git add .
+git commit -m "feat(release): add windows exe release pipeline"
+git push origin main
+```
+
+2) 回到主仓提交 submodule 指针：
+
+```powershell
+cd ..
+git checkout main
+git pull --ff-only origin main
+git add runner
+git commit -m "chore: bump runner submodule"
+git push origin main
+```
+
+3) 在 `runner` 子仓打 tag 并触发 Release：
+
+```powershell
+cd runner
+git tag -a runner-v1.0.0 -m "runner release v1.0.0"
+git push origin runner-v1.0.0
+```
+
+完成后到 `runner` 仓库的 `Actions` 或 `Releases` 页面查看产物：
+- `AgentLab-Runner-<version>-windows-x64.zip`
+
 ## 快速开始
 
 1. 安装依赖（任选其一）  

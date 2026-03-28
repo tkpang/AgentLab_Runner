@@ -20,6 +20,55 @@ $guiErrLog = Join-Path $runDir "gui.err.log"
 $runnerLog = Join-Path $runDir "runner.log"
 $runnerErrLog = Join-Path $runDir "runner.err.log"
 
+function Add-PathOnce {
+  param([string]$PathEntry)
+  if ([string]::IsNullOrWhiteSpace($PathEntry)) { return }
+  if (-not (Test-Path $PathEntry)) { return }
+  $parts = $env:PATH -split ";"
+  if ($parts -contains $PathEntry) { return }
+  $env:PATH = "$PathEntry;$env:PATH"
+}
+
+function Prepare-RunnerEnvironment {
+  Remove-Item Env:ELECTRON_RUN_AS_NODE -ErrorAction SilentlyContinue
+  Add-PathOnce (Join-Path $root ".runtime\node\current")
+  Add-PathOnce (Join-Path $root ".tools\npm-global")
+  Add-PathOnce (Join-Path $root ".tools\npm-global\node_modules\.bin")
+  Add-PathOnce (Join-Path $env:ProgramFiles "nodejs")
+  Add-PathOnce (Join-Path $env:LOCALAPPDATA "Programs\nodejs")
+}
+
+function Ensure-NodeReady {
+  if (Get-Command node -ErrorAction SilentlyContinue) {
+    return
+  }
+
+  $setupScript = Join-Path $root "scripts/setup-windows.ps1"
+  if (-not (Test-Path $setupScript)) {
+    throw "Node.js not found and setup script is missing: $setupScript"
+  }
+
+  Write-Host "[runner] Node.js not found. Running setup..."
+  $setupArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $setupScript,
+    "-InstallAll"
+  )
+  if ($env:RUNNER_USE_CN_MIRROR -eq "1") {
+    $setupArgs += "-UseChinaMirror"
+  }
+  & powershell.exe @setupArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "setup-windows.ps1 failed with exit code $LASTEXITCODE"
+  }
+
+  Prepare-RunnerEnvironment
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw "Node.js still not found after setup. Please reopen terminal and retry."
+  }
+}
+
 function Start-ManagedProcess {
   param(
     [string]$Name,
@@ -69,6 +118,9 @@ if ($GuiMode -eq "desktop") {
 } else {
   Write-Host "[runner] GUI mode: web (browser)"
 }
+
+Prepare-RunnerEnvironment
+Ensure-NodeReady
 
 $guiScript = Resolve-GuiStartScript -Mode $GuiMode
 $guiName = Resolve-GuiName -Mode $GuiMode

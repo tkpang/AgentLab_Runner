@@ -5,7 +5,8 @@
   "main": "electron-main.cjs",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging"
+    "dev": "electron . --enable-logging",
+    "build:win:dir": "npm exec --yes electron-builder@24.13.3 -- --config electron-builder.yml --win dir --x64"
   },
   "keywords": [
     "agentlab",

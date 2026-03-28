@@ -58,15 +58,19 @@ function createBrandIcon(size = 256) {
 // Start backend server
 function startBackendServer() {
   const serverScript = path.join(__dirname, 'server.cjs');
-  serverProcess = spawn('node', [serverScript], {
+  const procEnv = {
+    ...process.env,
+    AGENTLAB_GUI_PORT: String(SERVER_PORT),
+    AGENTLAB_RUNNER_NO_BROWSER: '1',
+    ELECTRON_RUN_AS_NODE: '1',
+  };
+
+  // Use Electron's bundled runtime so packaged app does not depend on system Node.js.
+  serverProcess = spawn(process.execPath, [serverScript], {
     cwd: __dirname,
     stdio: 'ignore',
     windowsHide: true,
-    env: {
-      ...process.env,
-      AGENTLAB_GUI_PORT: String(SERVER_PORT),
-      AGENTLAB_RUNNER_NO_BROWSER: '1',
-    },
+    env: procEnv,
   });
 
   serverProcess.on('error', (err) => {

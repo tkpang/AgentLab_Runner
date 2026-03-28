@@ -8,11 +8,21 @@ $runnerRoot = Split-Path -Parent $scriptDir
 $guiDir = Join-Path $runnerRoot "gui"
 $nodeDir = Join-Path $runnerRoot ".runtime\node\current"
 
+function Add-PathOnce([string]$pathEntry) {
+    if ([string]::IsNullOrWhiteSpace($pathEntry)) { return }
+    if (-not (Test-Path $pathEntry)) { return }
+    $parts = $env:PATH -split ";"
+    if ($parts -contains $pathEntry) { return }
+    $env:PATH = "$pathEntry;$env:PATH"
+}
+
 Write-Host "[AgentLab Runner] Starting Web GUI..." -ForegroundColor Cyan
 Write-Host ""
 
 # Add Node to PATH
-$env:PATH = "$nodeDir;$env:PATH"
+Add-PathOnce $nodeDir
+Add-PathOnce (Join-Path $env:ProgramFiles "nodejs")
+Add-PathOnce (Join-Path $env:LOCALAPPDATA "Programs\nodejs")
 
 # Check if Node is available
 $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
