@@ -30,10 +30,8 @@ function isWindowsPlatform() {
 }
 
 async function refreshAllStatus() {
-  const env = await checkEnvironment(addLog);
-  if (env?.platform === 'win32') {
-    await refreshSlots(addLog);
-  }
+  await checkEnvironment(addLog);
+  await refreshSlots(addLog);
   applyPlatformSpecificUI();
 }
 
@@ -406,29 +404,19 @@ async function openAccountSwitchModal(tool) {
   const currentSlotEl = document.getElementById('accountSwitchCurrentSlot');
 
   const name = toolDisplayName(accountSwitchTool);
-  const isWin = isWindowsPlatform();
   if (titleEl) titleEl.textContent = `${name} 切换账号`;
   if (reloginBtn) reloginBtn.textContent = `重新登录 ${name}`;
-
-  if (isWin) {
-    if (refreshBtn) refreshBtn.style.display = '';
-    if (openSlotsBtn) openSlotsBtn.style.display = '';
-    setAccountSwitchStatus('正在读取账号槽位...', 'info');
-    await refreshSlots(addLog);
-    const snapshot = getSlotSnapshot();
-    if (currentSlotEl) currentSlotEl.textContent = snapshot.activeSlot || '--';
-    if (hintEl) hintEl.textContent = '建议流程：先登录 -> 保存槽位 -> 通过槽位一键切换账号。';
-    if (snapshot.hint && snapshot.hint.includes('暂未接入')) {
-      setAccountSwitchStatus(snapshot.hint, 'warning');
-    } else {
-      setAccountSwitchStatus(`当前槽位：${snapshot.activeSlot || '--'}`, 'info');
-    }
+  if (refreshBtn) refreshBtn.style.display = '';
+  if (openSlotsBtn) openSlotsBtn.style.display = '';
+  setAccountSwitchStatus('正在读取账号槽位...', 'info');
+  await refreshSlots(addLog);
+  const snapshot = getSlotSnapshot();
+  if (currentSlotEl) currentSlotEl.textContent = snapshot.activeSlot || '--';
+  if (hintEl) hintEl.textContent = '建议流程：先登录 -> 保存槽位 -> 通过槽位一键切换账号。';
+  if (snapshot.hint && snapshot.hint.includes('暂未接入')) {
+    setAccountSwitchStatus(snapshot.hint, 'warning');
   } else {
-    if (refreshBtn) refreshBtn.style.display = 'none';
-    if (openSlotsBtn) openSlotsBtn.style.display = 'none';
-    if (currentSlotEl) currentSlotEl.textContent = 'Linux 无槽位';
-    if (hintEl) hintEl.textContent = 'Linux 环境当前使用“重新登录”切换账号。点击下方按钮后按终端/浏览器指引完成登录。';
-    setAccountSwitchStatus('Linux 暂未接入账号槽位管理。', 'warning');
+    setAccountSwitchStatus(`当前槽位：${snapshot.activeSlot || '--'}`, 'info');
   }
 
   modal.classList.add('is-open');
@@ -496,7 +484,6 @@ window.addEventListener('DOMContentLoaded', () => {
   });
   const accountRefreshBtn = document.getElementById('accountSwitchRefreshSlotsBtn');
   accountRefreshBtn?.addEventListener('click', async () => {
-    if (!isWindowsPlatform()) return;
     setAccountSwitchStatus('正在刷新槽位...', 'info');
     await refreshSlots(addLog);
     const snapshot = getSlotSnapshot();

@@ -1450,94 +1450,41 @@ async function testRunnerConnectionHandler(body) {
 }
 
 async function slotsListHandler() {
-  if (!IS_WIN) {
-    return { ok: true, activeSlot: '', slots: [], message: 'Linux 暂未接入账号槽位管理。' };
-  }
-  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-windows.ps1');
-  const result = await runCommand('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', scriptPath,
-    '-Action', 'list',
-    '-Json'
-  ]);
-  const json = parseFirstJson(result.stdout);
-  if (!json) {
-    return { ok: false, error: result.stderr || 'Failed to list slots' };
-  }
-  return json;
+  return runAccountSlots('list');
 }
 
 async function saveSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
-
-  if (!IS_WIN) {
-    return { ok: false, error: 'Linux 暂未接入账号槽位保存。' };
-  }
-
-  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-windows.ps1');
-  const result = await runCommand('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', scriptPath,
-    '-Action', 'save',
-    '-Slot', slotName,
-    '-Json'
-  ]);
-  const json = parseFirstJson(result.stdout);
-  if (!json) {
-    return { ok: false, error: result.stderr || 'Failed to save slot' };
-  }
-  return json;
+  return runAccountSlots('save', slotName);
 }
 
 async function activateSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
-
-  if (!IS_WIN) {
-    return { ok: false, error: 'Linux 暂未接入账号槽位启用。' };
-  }
-
-  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-windows.ps1');
-  const result = await runCommand('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', scriptPath,
-    '-Action', 'activate',
-    '-Slot', slotName,
-    '-Json'
-  ]);
-  const json = parseFirstJson(result.stdout);
-  if (!json) {
-    return { ok: false, error: result.stderr || 'Failed to activate slot' };
-  }
-  return json;
+  return runAccountSlots('activate', slotName);
 }
 
 async function deleteSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
+  return runAccountSlots('delete', slotName);
+}
 
-  if (!IS_WIN) {
-    return { ok: false, error: 'Linux 暂未接入账号槽位删除。' };
+async function runAccountSlots(action, slotName = '') {
+  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-cli.mjs');
+  if (!exists(scriptPath)) {
+    return { ok: false, error: `槽位脚本不存在: ${scriptPath}` };
   }
-
-  const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-windows.ps1');
-  const result = await runCommand('powershell.exe', [
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-File', scriptPath,
-    '-Action', 'delete',
-    '-Slot', slotName,
-    '-Json'
-  ]);
+  const args = [scriptPath, '--action', action, '--json'];
+  if (slotName) args.push('--slot', slotName);
+  const result = await runCommand(process.execPath, args, { shell: false });
   const json = parseFirstJson(result.stdout);
-  if (!json) {
-    return { ok: false, error: result.stderr || 'Failed to delete slot' };
+  if (json) return json;
+  if (result.code !== 0) {
+    return { ok: false, error: result.stderr || `account slots command failed (${result.code})` };
   }
-  return json;
+  return { ok: false, error: result.stderr || 'account slots command returned empty output' };
 }
 
 function openBrowser(url) {

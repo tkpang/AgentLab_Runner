@@ -211,10 +211,6 @@ export async function deleteSlot(slotName, addLog) {
 }
 
 export async function openSlotManager(addLog, onAfterSwitch = null) {
-  if (slotHintMessage.includes('Linux 暂未接入')) {
-    addLog(slotHintMessage, 'warning');
-    return;
-  }
   setSlotModalVisible(true);
   setSlotModalStatus('正在读取槽位列表...', 'info');
   const data = await refreshSlots(addLog);
