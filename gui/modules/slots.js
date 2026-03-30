@@ -2,6 +2,7 @@ import { apiGet, apiPost } from './api.js';
 
 let cachedSlots = [];
 let cachedActiveSlot = '--';
+let cachedTool = 'all';
 let slotHintMessage = '槽位用于保存“本机 CLI 登录态快照”，可在多账号之间快速切换。';
 let lastHintLogMessage = '';
 
@@ -86,10 +87,12 @@ function renderSlotList(onActivate, onDelete) {
   });
 }
 
-export async function refreshSlots(addLog) {
-  addLog('刷新账号槽位...', 'info');
+export async function refreshSlots(addLog, tool = 'all') {
+  const scope = tool === 'codex' ? 'Codex' : (tool === 'claude' ? 'Claude' : '共享');
+  cachedTool = tool;
+  addLog(`刷新账号槽位 (${scope})...`, 'info');
   try {
-    const data = await apiGet('/slots');
+    const data = await apiGet(`/slots?tool=${encodeURIComponent(tool)}`);
     if (!data?.ok) {
       addLog(`槽位读取失败: ${data?.error || '未知错误'}`, 'error');
       return null;
@@ -127,14 +130,15 @@ export function getSlotSnapshot() {
     slots: cachedSlots.slice(),
     activeSlot: cachedActiveSlot,
     hint: slotHintMessage,
+    tool: cachedTool,
   };
 }
 
-export async function activateSlot(slotName, addLog, onAfterSwitch = null) {
+export async function activateSlot(slotName, addLog, onAfterSwitch = null, tool = cachedTool) {
   const target = String(slotName || '').trim();
   if (!target) return;
   try {
-    const data = await apiPost('/activate-slot', { name: target });
+    const data = await apiPost('/activate-slot', { name: target, tool });
     if (!data?.ok) {
       addLog(`切换槽位失败: ${data?.error || '未知错误'}`, 'error');
       setSlotModalStatus(`切换失败: ${data?.error || '未知错误'}`, 'error');
@@ -142,10 +146,10 @@ export async function activateSlot(slotName, addLog, onAfterSwitch = null) {
     }
     addLog(`已切换到槽位: ${target}`, 'success');
     setSlotModalStatus(`已切换到槽位: ${target}`, 'success');
-    await refreshSlots(addLog);
+    await refreshSlots(addLog, tool);
     renderSlotList(
-      (name) => activateSlot(name, addLog, onAfterSwitch),
-      (name) => deleteSlot(name, addLog),
+      (name) => activateSlot(name, addLog, onAfterSwitch, tool),
+      (name) => deleteSlot(name, addLog, tool),
     );
     if (typeof onAfterSwitch === 'function') {
       await onAfterSwitch();
@@ -156,7 +160,7 @@ export async function activateSlot(slotName, addLog, onAfterSwitch = null) {
   }
 }
 
-export async function saveSlot(addLog) {
+export async function saveSlot(addLog, tool = cachedTool) {
   const { input } = slotModalElements();
   const slotName = String(input?.value || '').trim();
   if (!slotName) {
@@ -166,7 +170,7 @@ export async function saveSlot(addLog) {
   }
   addLog('保存当前账号到槽位...', 'info');
   try {
-    const data = await apiPost('/save-slot', { name: slotName });
+    const data = await apiPost('/save-slot', { name: slotName, tool });
     if (!data?.ok) {
       addLog(`保存槽位失败: ${data?.error || '未知错误'}`, 'error');
       setSlotModalStatus(`保存失败: ${data?.error || '未知错误'}`, 'error');
@@ -175,10 +179,10 @@ export async function saveSlot(addLog) {
     addLog(data.message || '槽位保存成功', 'success');
     setSlotModalStatus(data.message || '槽位保存成功', 'success');
     if (input) input.value = '';
-    await refreshSlots(addLog);
+    await refreshSlots(addLog, tool);
     renderSlotList(
-      (name) => activateSlot(name, addLog),
-      (name) => deleteSlot(name, addLog),
+      (name) => activateSlot(name, addLog, null, tool),
+      (name) => deleteSlot(name, addLog, tool),
     );
   } catch (error) {
     addLog(`保存槽位失败: ${error.message}`, 'error');
@@ -186,12 +190,12 @@ export async function saveSlot(addLog) {
   }
 }
 
-export async function deleteSlot(slotName, addLog) {
+export async function deleteSlot(slotName, addLog, tool = cachedTool) {
   const target = String(slotName || '').trim();
   if (!target) return;
   addLog(`删除槽位: ${target}`, 'info');
   try {
-    const data = await apiPost('/delete-slot', { name: target });
+    const data = await apiPost('/delete-slot', { name: target, tool });
     if (!data?.ok) {
       addLog(`删除槽位失败: ${data?.error || '未知错误'}`, 'error');
       setSlotModalStatus(`删除失败: ${data?.error || '未知错误'}`, 'error');
@@ -199,10 +203,10 @@ export async function deleteSlot(slotName, addLog) {
     }
     addLog(data.message || `已删除槽位: ${target}`, 'success');
     setSlotModalStatus(data.message || `已删除槽位: ${target}`, 'success');
-    await refreshSlots(addLog);
+    await refreshSlots(addLog, tool);
     renderSlotList(
-      (name) => activateSlot(name, addLog),
-      (name) => deleteSlot(name, addLog),
+      (name) => activateSlot(name, addLog, null, tool),
+      (name) => deleteSlot(name, addLog, tool),
     );
   } catch (error) {
     addLog(`删除槽位失败: ${error.message}`, 'error');
@@ -210,15 +214,15 @@ export async function deleteSlot(slotName, addLog) {
   }
 }
 
-export async function openSlotManager(addLog, onAfterSwitch = null) {
+export async function openSlotManager(addLog, onAfterSwitch = null, tool = cachedTool) {
   setSlotModalVisible(true);
   setSlotModalStatus('正在读取槽位列表...', 'info');
-  const data = await refreshSlots(addLog);
+  const data = await refreshSlots(addLog, tool);
   cachedSlots = Array.isArray(data?.slots) ? data.slots : cachedSlots;
   cachedActiveSlot = data?.activeSlot || cachedActiveSlot;
   renderSlotList(
-    (name) => activateSlot(name, addLog, onAfterSwitch),
-    (name) => deleteSlot(name, addLog),
+    (name) => activateSlot(name, addLog, onAfterSwitch, tool),
+    (name) => deleteSlot(name, addLog, tool),
   );
   if (!cachedSlots.length) {
     setSlotModalStatus(data?.message || '当前没有可用槽位', 'warning');
@@ -245,23 +249,23 @@ export function bindSlotManager(addLog, onAfterSwitch = null) {
   const refreshBtn = document.getElementById('slotRefreshBtn');
   refreshBtn?.addEventListener('click', async () => {
     setSlotModalStatus('正在刷新槽位...', 'info');
-    await refreshSlots(addLog);
+    await refreshSlots(addLog, cachedTool);
     renderSlotList(
-      (name) => activateSlot(name, addLog, onAfterSwitch),
-      (name) => deleteSlot(name, addLog),
+      (name) => activateSlot(name, addLog, onAfterSwitch, cachedTool),
+      (name) => deleteSlot(name, addLog, cachedTool),
     );
     setSlotModalStatus(`当前槽位: ${cachedActiveSlot}`, 'info');
   });
 
   const saveBtn = document.getElementById('slotSaveBtn');
   saveBtn?.addEventListener('click', async () => {
-    await saveSlot(addLog);
+    await saveSlot(addLog, cachedTool);
   });
 
   input?.addEventListener('keydown', async (event) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      await saveSlot(addLog);
+      await saveSlot(addLog, cachedTool);
     }
   });
 }

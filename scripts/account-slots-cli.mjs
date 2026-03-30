@@ -11,6 +11,7 @@ function parseArgs(argv) {
     slot: '',
     json: false,
     root: '',
+    tool: 'all',
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -44,12 +45,17 @@ function parseArgs(argv) {
       parsed.root = token.slice(token.indexOf('=') + 1).trim();
       continue;
     }
-    if (normalized === '--json' || normalized === '-json') {
-      parsed.json = true;
+    if (normalized === '--tool' || normalized === '-tool') {
+      parsed.tool = String(argv[i + 1] || '').trim();
+      i += 1;
       continue;
     }
-    if (!token.startsWith('-') && !parsed.action) {
-      parsed.action = token;
+    if (normalized.startsWith('--tool=')) {
+      parsed.tool = token.slice(token.indexOf('=') + 1).trim();
+      continue;
+    }
+    if (normalized === '--json' || normalized === '-json') {
+      parsed.json = true;
       continue;
     }
     if (!token.startsWith('-') && parsed.action === 'list' && ['save', 'activate', 'delete', 'show-active'].includes(token.toLowerCase())) {
@@ -62,11 +68,13 @@ function parseArgs(argv) {
 
 const parsed = parseArgs(args);
 const action = normalizeAction(parsed.action);
+const tool = normalizeTool(parsed.tool);
 const homeDir = os.homedir();
 const appData = process.env.APPDATA || '';
 const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(homeDir, '.config');
 const slotsRoot = parsed.root ? path.resolve(parsed.root) : path.join(homeDir, '.agentlab', 'account-slots', process.platform || 'unknown');
-const activeSlotFile = path.join(slotsRoot, '.active-slot');
+const scopedSlotsRoot = tool === 'all' ? slotsRoot : path.join(slotsRoot, tool);
+const activeSlotFile = path.join(scopedSlotsRoot, '.active-slot');
 
 const knownTargets = [
   { tool: 'codex', key: 'codex_auth', filePath: path.join(homeDir, '.codex', 'auth.json') },
@@ -106,11 +114,23 @@ function normalizeAction(value) {
   throw new Error(`Unsupported action: ${value} (allowed: list/save/activate/delete/show-active)`);
 }
 
+function normalizeTool(value) {
+  const v = String(value || 'all').trim().toLowerCase();
+  if (!v || v === 'all') return 'all';
+  if (v === 'codex' || v === 'claude') return v;
+  throw new Error(`Unsupported tool: ${value} (allowed: all/codex/claude)`);
+}
+
 function normalizeSlotName(value) {
   const v = String(value || '').trim();
   if (!v) throw new Error('Slot name is required.');
   if (/[\\/:*?"<>|]/.test(v)) throw new Error('Slot name contains invalid characters: \\/:*?"<>|');
   return v;
+}
+
+function scopedTargets() {
+  if (tool === 'all') return uniqueKnownTargets;
+  return uniqueKnownTargets.filter((item) => item.tool === tool);
 }
 
 function ensureDir(dirPath) {
@@ -188,8 +208,18 @@ function toAbsoluteTargetPath(storedPath) {
   throw new Error(`Unsupported stored scope: ${scope}`);
 }
 
+function countFilesByTool(files) {
+  const result = { codex: 0, claude: 0 };
+  for (const file of files || []) {
+    const t = String(file?.tool || '').trim().toLowerCase();
+    if (t === 'codex') result.codex += 1;
+    if (t === 'claude') result.claude += 1;
+  }
+  return result;
+}
+
 function writeActiveSlot(slot) {
-  ensureDir(slotsRoot);
+  ensureDir(scopedSlotsRoot);
   fs.writeFileSync(activeSlotFile, `${slot}\n`, 'utf8');
 }
 
@@ -207,32 +237,42 @@ function readActiveSlot() {
 }
 
 function listSlots() {
-  if (!dirExists(slotsRoot)) {
+  if (!dirExists(scopedSlotsRoot)) {
     return {
       ok: true,
       action: 'list',
-      slotsRoot,
+      tool,
+      slotsRoot: scopedSlotsRoot,
       activeSlot: '',
       slots: [],
     };
   }
 
   const activeSlot = readActiveSlot();
-  const names = fs.readdirSync(slotsRoot, { withFileTypes: true })
+  const names = fs.readdirSync(scopedSlotsRoot, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
     .filter((name) => !name.startsWith('.'));
 
   const slots = names.map((name) => {
-    const slotDir = path.join(slotsRoot, name);
+    const slotDir = path.join(scopedSlotsRoot, name);
     const metaPath = path.join(slotDir, 'meta.json');
     let updatedAt = '';
     let savedCount = 0;
+    let savedCountByTool = { codex: 0, claude: 0 };
     if (fileExists(metaPath)) {
       try {
         const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
         updatedAt = typeof meta.updatedAt === 'string' ? meta.updatedAt : '';
         savedCount = Number(meta.savedCount || 0);
+        if (meta.savedCountByTool && typeof meta.savedCountByTool === 'object') {
+          savedCountByTool = {
+            codex: Number(meta.savedCountByTool.codex || 0),
+            claude: Number(meta.savedCountByTool.claude || 0),
+          };
+        } else if (Array.isArray(meta.files)) {
+          savedCountByTool = countFilesByTool(meta.files);
+        }
       } catch {
         // ignore
       }
@@ -242,6 +282,7 @@ function listSlots() {
       isActive: name === activeSlot,
       updatedAt,
       savedCount: Number.isFinite(savedCount) ? savedCount : 0,
+      savedCountByTool,
     };
   }).sort((a, b) => {
     const ta = a.updatedAt ? Date.parse(a.updatedAt) : 0;
@@ -253,7 +294,8 @@ function listSlots() {
   return {
     ok: true,
     action: 'list',
-    slotsRoot,
+    tool,
+    slotsRoot: scopedSlotsRoot,
     activeSlot,
     slots,
   };
@@ -287,14 +329,14 @@ function collectStoredFiles(rootDir) {
 
 function saveSlot(slotName) {
   const slot = normalizeSlotName(slotName);
-  const slotDir = path.join(slotsRoot, slot);
+  const slotDir = path.join(scopedSlotsRoot, slot);
   const filesDir = path.join(slotDir, 'files');
-  ensureDir(slotsRoot);
+  ensureDir(scopedSlotsRoot);
   removeIfExists(filesDir);
   ensureDir(filesDir);
 
   const savedFiles = [];
-  for (const target of uniqueKnownTargets) {
+  for (const target of scopedTargets()) {
     if (!fileExists(target.filePath)) continue;
     const relPath = toRelativeStorePath(target.filePath);
     const storePath = path.join(filesDir, relPath);
@@ -315,10 +357,13 @@ function saveSlot(slotName) {
     });
   }
 
+  const savedCountByTool = countFilesByTool(savedFiles);
   const meta = {
     slot,
+    tool,
     updatedAt: new Date().toISOString(),
     savedCount: savedFiles.length,
+    savedCountByTool,
     files: savedFiles,
   };
   ensureDir(slotDir);
@@ -327,8 +372,10 @@ function saveSlot(slotName) {
   return {
     ok: true,
     action: 'save',
+    tool,
     slot,
     savedCount: savedFiles.length,
+    savedCountByTool,
     slotDir,
     warning: savedFiles.length === 0 ? 'No known credential files found. Please login first.' : '',
     message: savedFiles.length === 0
@@ -339,7 +386,7 @@ function saveSlot(slotName) {
 
 function activateSlot(slotName) {
   const slot = normalizeSlotName(slotName);
-  const slotDir = path.join(slotsRoot, slot);
+  const slotDir = path.join(scopedSlotsRoot, slot);
   const filesDir = path.join(slotDir, 'files');
   if (!dirExists(slotDir)) throw new Error(`Slot not found: ${slot}`);
   if (!dirExists(filesDir)) throw new Error(`Slot has no saved files: ${slot}`);
@@ -359,7 +406,7 @@ function activateSlot(slotName) {
     throw new Error(`Slot has no restorable credential files: ${slot}`);
   }
 
-  for (const target of uniqueKnownTargets) {
+  for (const target of scopedTargets()) {
     removeIfExists(target.filePath);
   }
 
@@ -374,6 +421,7 @@ function activateSlot(slotName) {
   return {
     ok: true,
     action: 'activate',
+    tool,
     slot,
     restoredCount: restored.length,
     restored,
@@ -383,11 +431,12 @@ function activateSlot(slotName) {
 
 function deleteSlot(slotName) {
   const slot = normalizeSlotName(slotName);
-  const slotDir = path.join(slotsRoot, slot);
+  const slotDir = path.join(scopedSlotsRoot, slot);
   if (!dirExists(slotDir)) {
     return {
       ok: true,
       action: 'delete',
+      tool,
       slot,
       deleted: false,
       message: 'Slot not found.',
@@ -398,6 +447,7 @@ function deleteSlot(slotName) {
   return {
     ok: true,
     action: 'delete',
+    tool,
     slot,
     deleted: true,
     message: `已删除槽位：${slot}`,
@@ -408,6 +458,7 @@ function showActiveSlot() {
   return {
     ok: true,
     action: 'show-active',
+    tool,
     activeSlot: readActiveSlot(),
   };
 }
@@ -441,6 +492,7 @@ try {
   const payload = {
     ok: false,
     action,
+    tool,
     error: message,
   };
   writeResult(payload, parsed.json);

@@ -31,7 +31,7 @@ function isWindowsPlatform() {
 
 async function refreshAllStatus() {
   await checkEnvironment(addLog);
-  await refreshSlots(addLog);
+  await refreshSlots(addLog, 'all');
   applyPlatformSpecificUI();
 }
 
@@ -409,7 +409,7 @@ async function openAccountSwitchModal(tool) {
   if (refreshBtn) refreshBtn.style.display = '';
   if (openSlotsBtn) openSlotsBtn.style.display = '';
   setAccountSwitchStatus('正在读取账号槽位...', 'info');
-  await refreshSlots(addLog);
+  await refreshSlots(addLog, accountSwitchTool);
   const snapshot = getSlotSnapshot();
   if (currentSlotEl) currentSlotEl.textContent = snapshot.activeSlot || '--';
   if (hintEl) hintEl.textContent = '建议流程：先登录 -> 保存槽位 -> 通过槽位一键切换账号。';
@@ -436,7 +436,7 @@ window.closeWindow = closeWindow;
 window.checkEnvironment = () => checkEnvironment(addLog);
 window.refreshQuota = () => refreshQuota(addLog);
 window.refreshSlots = () => refreshSlots(addLog);
-window.manageSlots = () => openSlotManager(addLog, () => checkEnvironment(addLog));
+window.manageSlots = () => openSlotManager(addLog, () => checkEnvironment(addLog), 'all');
 window.closeSlotManager = closeSlotManager;
 window.closeAccountSwitchModal = closeAccountSwitchModal;
 window.installCodex = installCodex;
@@ -485,7 +485,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const accountRefreshBtn = document.getElementById('accountSwitchRefreshSlotsBtn');
   accountRefreshBtn?.addEventListener('click', async () => {
     setAccountSwitchStatus('正在刷新槽位...', 'info');
-    await refreshSlots(addLog);
+    await refreshSlots(addLog, accountSwitchTool);
     const snapshot = getSlotSnapshot();
     const currentSlotEl = document.getElementById('accountSwitchCurrentSlot');
     if (currentSlotEl) currentSlotEl.textContent = snapshot.activeSlot || '--';
@@ -496,7 +496,7 @@ window.addEventListener('DOMContentLoaded', () => {
     openSlotManager(addLog, async () => {
       await refreshAllStatus();
       await openAccountSwitchModal(accountSwitchTool);
-    });
+    }, accountSwitchTool);
   });
 
   setTimeout(() => {

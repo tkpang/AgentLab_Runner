@@ -1449,34 +1449,45 @@ async function testRunnerConnectionHandler(body) {
   }
 }
 
-async function slotsListHandler() {
-  return runAccountSlots('list');
+function normalizeSlotTool(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (v === 'codex' || v === 'claude') return v;
+  return 'all';
+}
+
+async function slotsListHandler(_body, req) {
+  const requestUrl = new URL(req.url, `http://127.0.0.1:${PORT}`);
+  const tool = normalizeSlotTool(requestUrl.searchParams.get('tool'));
+  return runAccountSlots('list', '', tool);
 }
 
 async function saveSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
-  return runAccountSlots('save', slotName);
+  const tool = normalizeSlotTool(body?.tool);
+  return runAccountSlots('save', slotName, tool);
 }
 
 async function activateSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
-  return runAccountSlots('activate', slotName);
+  const tool = normalizeSlotTool(body?.tool);
+  return runAccountSlots('activate', slotName, tool);
 }
 
 async function deleteSlotHandler(body) {
   const slotName = String((body && body.name) || '').trim();
   if (!slotName) return { ok: false, error: 'Slot name required' };
-  return runAccountSlots('delete', slotName);
+  const tool = normalizeSlotTool(body?.tool);
+  return runAccountSlots('delete', slotName, tool);
 }
 
-async function runAccountSlots(action, slotName = '') {
+async function runAccountSlots(action, slotName = '', tool = 'all') {
   const scriptPath = path.join(SCRIPTS_DIR, 'account-slots-cli.mjs');
   if (!exists(scriptPath)) {
     return { ok: false, error: `槽位脚本不存在: ${scriptPath}` };
   }
-  const args = [scriptPath, '--action', action, '--json'];
+  const args = [scriptPath, '--action', action, '--json', '--tool', normalizeSlotTool(tool)];
   if (slotName) args.push('--slot', slotName);
   const result = await runCommand(process.execPath, args, { shell: false });
   const json = parseFirstJson(result.stdout);
