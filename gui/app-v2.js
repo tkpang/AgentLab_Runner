@@ -31,7 +31,6 @@ function isWindowsPlatform() {
 
 async function refreshAllStatus() {
   const env = await checkEnvironment(addLog);
-  await refreshQuota(addLog);
   if (env?.platform === 'win32') {
     await refreshSlots(addLog);
   }

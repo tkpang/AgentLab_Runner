@@ -1191,10 +1191,7 @@ async function runCommand(command: string, args: string[], timeoutMs = 8000): Pr
 async function collectHealthSnapshot(): Promise<Record<string, unknown>> {
   const codexVersion = await runCommand('codex', ['--version'], 6000);
   const claudeVersion = await runCommand('claude', ['--version'], 6000);
-  const codexModels = codexVersion.ok ? await runCommand('codex', ['models'], 7000) : { ok: false, output: 'skipped' };
-  const claudeModels = claudeVersion.ok ? await runCommand('claude', ['models'], 7000) : { ok: false, output: 'skipped' };
   const workspace = await getWorkspaceSnapshotCached();
-  const quota = await getQuotaSnapshotCached();
   const externalTasks = getExternalTaskSnapshotCached();
 
   return {
@@ -1206,18 +1203,13 @@ async function collectHealthSnapshot(): Promise<Record<string, unknown>> {
       codex: {
         installed: codexVersion.ok,
         version: codexVersion.output || '',
-        modelsProbe: codexModels.ok ? codexModels.output : '',
-        modelsProbeOk: codexModels.ok,
       },
       claudeCode: {
         installed: claudeVersion.ok,
         version: claudeVersion.output || '',
-        modelsProbe: claudeModels.ok ? claudeModels.output : '',
-        modelsProbeOk: claudeModels.ok,
       },
     },
     workspace,
-    quota,
     externalTasks,
   };
 }
