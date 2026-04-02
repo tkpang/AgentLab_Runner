@@ -8,12 +8,14 @@ import { resolveCodexExecutionMode } from '../services/codex-runtime.js';
 import { normalizeReasoningEffort } from '../services/reasoning-effort.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 3_599_000;
-let cachedCodexReasoningEffortSupport: boolean | null = null;
+type CodexExecFeatureSupport = {
+  reasoningEffort: boolean;
+  ephemeral: boolean;
+};
+let cachedCodexExecFeatureSupport: CodexExecFeatureSupport | null = null;
 
-function supportsCodexReasoningEffort(codexPath: string): boolean {
-  if (cachedCodexReasoningEffortSupport !== null) {
-    return cachedCodexReasoningEffortSupport;
-  }
+function readCodexExecFeatureSupport(codexPath: string): CodexExecFeatureSupport {
+  if (cachedCodexExecFeatureSupport) return cachedCodexExecFeatureSupport;
   try {
     const codexCommand = process.platform === 'win32' ? 'codex' : codexPath;
     const out = spawnSync(codexCommand, ['exec', '--help'], {
@@ -24,12 +26,29 @@ function supportsCodexReasoningEffort(codexPath: string): boolean {
       shell: process.platform === 'win32',
     });
     const help = `${out.stdout || ''}\n${out.stderr || ''}`;
-    cachedCodexReasoningEffortSupport = help.includes('--reasoning-effort');
+    cachedCodexExecFeatureSupport = {
+      reasoningEffort: help.includes('--reasoning-effort'),
+      ephemeral: help.includes('--ephemeral'),
+    };
   } catch {
-    // Keep optimistic behavior and rely on runtime fallback branch below.
-    cachedCodexReasoningEffortSupport = true;
+    // Keep optimistic behavior for reasoning-effort and conservative behavior for ephemeral.
+    // reasoning-effort has an explicit runtime fallback branch below.
+    cachedCodexExecFeatureSupport = { reasoningEffort: true, ephemeral: false };
   }
-  return cachedCodexReasoningEffortSupport;
+  return cachedCodexExecFeatureSupport;
+}
+
+function parsePersistSession(config: Record<string, unknown>): boolean {
+  const raw = config.persistSession ?? config.sessionPersistence;
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'number') return raw !== 0;
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  }
+  // Default to ephemeral sessions to avoid polluting local plugin history.
+  return false;
 }
 
 export class CodexAdapter implements AgentAdapter {
@@ -55,10 +74,13 @@ export class CodexAdapter implements AgentAdapter {
       ? config.hardTimeoutMs
       : ((config.timeoutMs as number) || DEFAULT_TASK_TIMEOUT_MS);
     const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort);
+    const persistSession = parsePersistSession(config);
 
     const codexPath = await which('codex');
     if (!codexPath) throw new Error('codex 命令未找到');
-    const canUseReasoningEffort = supportsCodexReasoningEffort(codexPath);
+    const featureSupport = readCodexExecFeatureSupport(codexPath);
+    const canUseReasoningEffort = featureSupport.reasoningEffort;
+    const canUseEphemeral = featureSupport.ephemeral;
 
     const runtimeMode = await resolveCodexExecutionMode();
     const taskAccessModeRaw = typeof config.environmentAccessMode === 'string' ? config.environmentAccessMode.trim().toLowerCase() : 'full';
@@ -84,13 +106,14 @@ export class CodexAdapter implements AgentAdapter {
       });
     };
 
-    const runOnce = (unsafeMode: boolean, useReasoningEffort: boolean): Promise<AdapterRunResult> => new Promise((resolve, reject) => {
+    const runOnce = (unsafeMode: boolean, useReasoningEffort: boolean, useEphemeral: boolean): Promise<AdapterRunResult> => new Promise((resolve, reject) => {
       const args = ['exec', '--skip-git-repo-check', '--json'];
       if (unsafeMode) {
         args.push('--dangerously-bypass-approvals-and-sandbox');
       }
       if (model) args.push('-m', model);
       if (useReasoningEffort && reasoningEffort) args.push('--reasoning-effort', reasoningEffort);
+      if (useEphemeral) args.push('--ephemeral');
       args.push('-');
 
       const proc = spawn(codexPath, args, {
@@ -246,24 +269,32 @@ export class CodexAdapter implements AgentAdapter {
     }
 
     let useReasoningEffort = Boolean(reasoningEffort) && canUseReasoningEffort;
+    let useEphemeral = !persistSession && canUseEphemeral;
     if (reasoningEffort && !canUseReasoningEffort) {
       publishSystemStep('⚠️ 当前 Codex CLI 未提供 --reasoning-effort，已退化为统一提示词策略');
     }
-    try {
-      return await runOnce(useUnsafeMode, useReasoningEffort);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (useReasoningEffort && isReasoningEffortOptionError(message)) {
-        useReasoningEffort = false;
-        publishSystemStep('⚠️ 当前 Codex CLI 不支持 --reasoning-effort，已自动降级为默认推理强度重试');
-        return runOnce(useUnsafeMode, useReasoningEffort);
+    while (true) {
+      try {
+        return await runOnce(useUnsafeMode, useReasoningEffort, useEphemeral);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (useReasoningEffort && isReasoningEffortOptionError(message)) {
+          useReasoningEffort = false;
+          publishSystemStep('⚠️ 当前 Codex CLI 不支持 --reasoning-effort，已自动降级为默认推理强度重试');
+          continue;
+        }
+        if (useEphemeral && isEphemeralOptionError(message)) {
+          useEphemeral = false;
+          publishSystemStep('⚠️ 当前 Codex CLI 不支持 --ephemeral，已回退为会话持久化模式');
+          continue;
+        }
+        if (!useUnsafeMode && allowAutoFallback && isBwrapArgv0Error(message)) {
+          useUnsafeMode = true;
+          publishSystemStep('⚠️ 检测到 bwrap 不兼容（--argv0），正在自动切换为兼容高权限模式重试');
+          continue;
+        }
+        throw err;
       }
-      if (!useUnsafeMode && allowAutoFallback && isBwrapArgv0Error(message)) {
-        useUnsafeMode = true;
-        publishSystemStep('⚠️ 检测到 bwrap 不兼容（--argv0），正在自动切换为兼容高权限模式重试');
-        return runOnce(useUnsafeMode, useReasoningEffort);
-      }
-      throw err;
     }
   }
 }
@@ -382,6 +413,13 @@ function isBwrapArgv0Error(message: string): boolean {
 function isReasoningEffortOptionError(message: string): boolean {
   const msg = message.toLowerCase();
   return msg.includes('reasoning-effort') && (
+    msg.includes('unknown option') || msg.includes('unrecognized option') || msg.includes('unexpected argument')
+  );
+}
+
+function isEphemeralOptionError(message: string): boolean {
+  const msg = message.toLowerCase();
+  return msg.includes('ephemeral') && (
     msg.includes('unknown option') || msg.includes('unrecognized option') || msg.includes('unexpected argument')
   );
 }

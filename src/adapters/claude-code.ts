@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import which from '../utils/which.js';
@@ -7,6 +7,41 @@ import { emitHeartbeatOutput } from './output.js';
 import { buildEffortSystemPrompt, normalizeReasoningEffort } from '../services/reasoning-effort.js';
 
 const DEFAULT_TASK_TIMEOUT_MS = 3_599_000;
+let cachedClaudeNoSessionPersistenceSupport: boolean | null = null;
+
+function supportsClaudeNoSessionPersistence(claudePath: string): boolean {
+  if (cachedClaudeNoSessionPersistenceSupport !== null) {
+    return cachedClaudeNoSessionPersistenceSupport;
+  }
+  try {
+    const claudeCommand = process.platform === 'win32' ? 'claude' : claudePath;
+    const out = spawnSync(claudeCommand, ['--help'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      maxBuffer: 512 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: process.platform === 'win32',
+    });
+    const help = `${out.stdout || ''}\n${out.stderr || ''}`;
+    cachedClaudeNoSessionPersistenceSupport = help.includes('--no-session-persistence');
+  } catch {
+    cachedClaudeNoSessionPersistenceSupport = false;
+  }
+  return cachedClaudeNoSessionPersistenceSupport;
+}
+
+function parsePersistSession(config: Record<string, unknown>): boolean {
+  const raw = config.persistSession ?? config.sessionPersistence;
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'number') return raw !== 0;
+  if (typeof raw === 'string') {
+    const normalized = raw.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  }
+  // Default to ephemeral sessions to avoid polluting local plugin history.
+  return false;
+}
 
 export class ClaudeCodeAdapter implements AgentAdapter {
   name = 'claude-code';
@@ -28,13 +63,18 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     const abortSignal = config._abortSignal as AbortSignal | undefined;
     const envOverrides = (config._envOverrides as Record<string, string> | undefined) || {};
     const reasoningEffort = normalizeReasoningEffort(config.reasoningEffort);
+    const persistSession = parsePersistSession(config);
 
     const claudePath = await which('claude');
     if (!claudePath) throw new Error('claude 命令未找到');
+    const supportsNoSessionPersistence = supportsClaudeNoSessionPersistence(claudePath);
 
     // Use stream-json + verbose for realtime structured output
     const args = ['--print', '--verbose', '--output-format', 'stream-json'];
     if (model) args.push('--model', model);
+    if (!persistSession && supportsNoSessionPersistence) {
+      args.push('--no-session-persistence');
+    }
     if (reasoningEffort) {
       // Claude CLI currently has no native --reasoning-effort flag.
       // Use a shared system-prompt mapping so effort semantics stay aligned across adapters.
